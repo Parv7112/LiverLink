@@ -37,6 +37,9 @@ async def register_user(payload: UserCreate, users: AsyncIOMotorCollection = Dep
         result = await users.insert_one(doc)
         stored = await users.find_one({"_id": result.inserted_id})
     except PyMongoError as exc:  # pragma: no cover - requires external service
+        from ..utils.logging import log_db_error
+
+        log_db_error("register_user", exc)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Registration failed. Try again when database is available.",
@@ -50,6 +53,9 @@ async def login_user(form_data: OAuth2PasswordRequestForm = Depends(), users: As
     try:
         user = await users.find_one({"email": form_data.username})
     except PyMongoError as exc:  # pragma: no cover
+        from ..utils.logging import log_db_error
+
+        log_db_error("login_user", exc)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Login unavailable. Try again shortly.",
