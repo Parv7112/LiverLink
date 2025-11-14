@@ -1,15 +1,27 @@
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { login as apiLogin, logout as apiLogout } from "../lib/api";
+
+export type UserProfile = {
+  _id: string;
+  email: string;
+  name: string;
+  role: "coordinator" | "surgeon" | "admin";
+  created_at: string;
+};
+
+type AuthModalMode = "login" | "register";
 
 interface AuthContextValue {
   token: string | null;
   email: string | null;
-  login: (email: string, password: string) => Promise<void>;
+  user: UserProfile | null;
+  login: (email: string, password: string, role: UserProfile["role"]) => Promise<UserProfile>;
   logout: () => void;
-  openLogin: (reason?: string) => void;
+  openLogin: (reason?: string, mode?: AuthModalMode) => void;
   closeLogin: () => void;
   requireAuth: (reason?: string) => boolean;
-  loginModal: { open: boolean; reason?: string };
+  requireRole: (roles: Array<UserProfile["role"]>, reason?: string) => boolean;
+  loginModal: { open: boolean; reason?: string; mode: AuthModalMode };
   authLoading: boolean;
   authError: string | null;
   pushMessage: (message: string) => void;
@@ -22,18 +34,26 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(localStorage.getItem("liverlink_token"));
   const [email, setEmail] = useState<string | null>(localStorage.getItem("liverlink_user_email"));
-  const [loginModal, setLoginModal] = useState<{ open: boolean; reason?: string }>({ open: false });
+  const [user, setUser] = useState<UserProfile | null>(() => {
+    const stored = localStorage.getItem("liverlink_user");
+    return stored ? (JSON.parse(stored) as UserProfile) : null;
+  });
+  const [loginModal, setLoginModal] = useState<{ open: boolean; reason?: string; mode: AuthModalMode }>({
+    open: false,
+    reason: undefined,
+    mode: "login",
+  });
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [bannerMessage, setBannerMessage] = useState<string | null>(null);
 
-  const openLogin = useCallback((reason?: string) => {
-    setLoginModal({ open: true, reason });
+  const openLogin = useCallback((reason?: string, mode: AuthModalMode = "login") => {
+    setLoginModal({ open: true, reason, mode });
     setAuthError(null);
   }, []);
 
   const closeLogin = useCallback(() => {
-    setLoginModal({ open: false });
+    setLoginModal({ open: false, reason: undefined, mode: "login" });
     setAuthError(null);
   }, []);
 
@@ -45,19 +65,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setBannerMessage(null);
   }, []);
 
+  useEffect(() => {
+    if (!bannerMessage) return;
+    const timeout = window.setTimeout(() => setBannerMessage(null), 1800);
+    return () => window.clearTimeout(timeout);
+  }, [bannerMessage]);
+
   const login = useCallback(
-    async (userEmail: string, password: string) => {
+    async (userEmail: string, password: string, role: UserProfile["role"]) => {
       setAuthLoading(true);
       setAuthError(null);
       try {
-        const accessToken = await apiLogin(userEmail, password);
-        setToken(accessToken);
+        const session = await apiLogin(userEmail, password, role);
+        setToken(session.access_token);
         setEmail(userEmail);
+        setUser(session.user);
         localStorage.setItem("liverlink_user_email", userEmail);
-        pushMessage("Login successful. Session unlocked.");
+        localStorage.setItem("liverlink_user", JSON.stringify(session.user));
+        pushMessage(session.message ?? "Login successful. Session unlocked.");
         closeLogin();
+        return session.user;
       } catch (error: any) {
-        setAuthError(error?.response?.data?.detail ?? "Invalid credentials");
+        const detail = error?.response?.data?.detail ?? "Invalid credentials";
+        setAuthError(detail);
+        pushMessage(detail);
         throw error;
       } finally {
         setAuthLoading(false);
@@ -69,8 +100,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(() => {
     apiLogout();
     localStorage.removeItem("liverlink_user_email");
+    localStorage.removeItem("liverlink_user");
     setToken(null);
     setEmail(null);
+    setUser(null);
     pushMessage("You have been logged out.");
   }, [pushMessage]);
 
@@ -83,15 +116,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [token, openLogin]
   );
 
+  const requireRole = useCallback(
+    (roles: Array<UserProfile["role"]>, reason?: string) => {
+      if (!requireAuth(reason)) return false;
+      if (!roles.length) return true;
+      if (user && roles.includes(user.role)) {
+        return true;
+      }
+      pushMessage("You do not have permission to view that area.");
+      return false;
+    },
+    [requireAuth, user, pushMessage]
+  );
+
   const value = useMemo(
     () => ({
       token,
       email,
+      user,
       login,
       logout,
       openLogin,
       closeLogin,
       requireAuth,
+      requireRole,
       loginModal,
       authLoading,
       authError,
@@ -102,11 +150,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [
       token,
       email,
+      user,
       login,
       logout,
       openLogin,
       closeLogin,
       requireAuth,
+      requireRole,
       loginModal,
       authLoading,
       authError,

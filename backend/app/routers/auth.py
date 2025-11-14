@@ -3,13 +3,13 @@ from __future__ import annotations
 from datetime import datetime
 
 from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, Security, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Security, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from motor.motor_asyncio import AsyncIOMotorCollection
 from pymongo.errors import PyMongoError
 
 from ..database import db, settings
-from ..models.user import Token, UserCreate, UserPublic
+from ..models.user import AuthResponse, UserCreate, UserPublic, UserRole
 from ..utils.security import create_access_token, hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -48,8 +48,20 @@ async def register_user(payload: UserCreate, users: AsyncIOMotorCollection = Dep
     return UserPublic(**stored)
 
 
-@router.post("/login", response_model=Token)
-async def login_user(form_data: OAuth2PasswordRequestForm = Depends(), users: AsyncIOMotorCollection = Depends(get_user_collection)) -> Token:
+class LoginForm:
+    def __init__(
+        self,
+        username: str = Form(...),
+        password: str = Form(...),
+        role: str = Form(...),
+    ) -> None:
+        self.username = username
+        self.password = password
+        self.role = role
+
+
+@router.post("/login", response_model=AuthResponse)
+async def login_user(form_data: LoginForm = Depends(), users: AsyncIOMotorCollection = Depends(get_user_collection)) -> AuthResponse:
     try:
         user = await users.find_one({"email": form_data.username})
     except PyMongoError as exc:  # pragma: no cover
@@ -62,8 +74,13 @@ async def login_user(form_data: OAuth2PasswordRequestForm = Depends(), users: As
         ) from exc
     if not user or not verify_password(form_data.password, user.get("password", "")):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
-    token = create_access_token(str(user["_id"]))
-    return Token(access_token=token)
+    if user.get("role") != form_data.role:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Role mismatch for this account")
+    user_id = str(user["_id"])
+    user["_id"] = user_id
+    token = create_access_token(user_id)
+    public_user = UserPublic(**user)
+    return AuthResponse(access_token=token, user=public_user, message="Welcome back")
 
 
 async def _ensure_demo_user(users: AsyncIOMotorCollection) -> UserPublic:
@@ -119,4 +136,16 @@ async def get_current_user(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     user["_id"] = str(user["_id"])
     return UserPublic(**user)
+
+
+def require_roles(*roles: UserRole):
+    def dependency(user: UserPublic = Depends(get_current_user)) -> UserPublic:
+        if roles and user.role not in roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions for this action",
+            )
+        return user
+
+    return dependency
 
