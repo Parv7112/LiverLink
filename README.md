@@ -148,18 +148,27 @@ Swagger: [http://localhost:8000/docs](http://localhost:8000/docs)
 
 ---
 
-## ☁️ Deploying to Render
+## ☁️ Deploying to Render (single service)
 
-1. **Connect the repo**: Push LiverLink to GitHub/GitLab and create a new *Blueprint Instance* in Render pointing to the root. The checked-in `render.yaml` provisions both the FastAPI backend and the Vite frontend from the same repo.
-2. **Fill env vars**: When Render asks for secrets, supply the values declared in `render.yaml` (`MONGODB_URL`, `JWT_SECRET`, `TWILIO_*`, `LANGFUSE_*`, `OPENAI_API_KEY`, etc.). Render keeps them encrypted and injects them at build/start time.
-3. **Build & start scripts**: The blueprint delegates to helpers under `scripts/`:
-   - `scripts/render-backend-build.sh` installs Python dependencies.
-   - `scripts/render-backend-start.sh` runs `uvicorn app.main:socket_app --host 0.0.0.0 --port $PORT`.
-   - `scripts/render-frontend-build.sh` installs npm deps and builds the Vite bundle.
-4. **Wire the frontend URL**: `VITE_API_BASE_URL` defaults to `https://liverlink-backend.onrender.com`. Update it if Render assigns a different backend hostname.
-5. **Smoke test**: After deploy, hit `https://<backend-host>/health`, then open the static site URL and walk through login → donor scan to confirm sockets work over HTTPS/WSS.
+The repo now ships a multi-stage Dockerfile (`backend/Dockerfile`) that builds the Vite frontend and FastAPI backend into a single container. FastAPI serves the compiled SPA from `/` while the APIs remain under their existing routes.
 
-Prefer manual services instead of a blueprint? Create a Render “Web Service” for the backend using the same scripts, then host `frontend/dist` on any Render “Static Site”.
+1. **Create one Web Service (Docker)**  
+   - Dockerfile path: `backend/Dockerfile`  
+   - Build context: repo root (`.`)  
+   - Leave Docker Command empty (the Dockerfile already runs Uvicorn).
+2. **Environment variables**  
+   - Required: `MONGODB_URL` (include `/dbname`), `JWT_SECRET`.  
+   - Optional: `LANGFUSE_*`, `OPENAI_API_KEY`, `TWILIO_*`, etc.  
+   - Set Render’s **Health Check Path** to `/health` to avoid 404 logs from the default `/`.
+3. **Build arguments** (optional)  
+   - `VITE_API_BASE_URL` defaults to `/`, so the frontend calls the backend on the same origin. Override via Render’s Docker Build Args if you ever host the API elsewhere.
+4. **Deploy**  
+   - Render builds the frontend in the first stage, copies `frontend/dist` into the image, and boots FastAPI + Socket.IO on port 8000.  
+   - The same URL (e.g., `https://liverlink.onrender.com`) now serves the SPA and JSON APIs.
+5. **Smoke test**  
+   - Visit `/` for the UI and `/docs` or `/health` for API checks. WebSockets work over the same domain automatically.
+
+Prefer the old split deployment? Keep a separate Static Site using the `scripts/render-frontend-build.sh` helper and point the backend Web Service to `scripts/render-backend-start.sh`. The Docker path above is the new default.
 
 ---
 

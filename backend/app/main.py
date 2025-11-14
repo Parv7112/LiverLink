@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any, Dict
 
 import socketio
 from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from loguru import logger
 from pymongo.errors import PyMongoError
 
@@ -137,4 +139,34 @@ async def ensure_demo_user() -> None:
             )
     except PyMongoError as exc:  # pragma: no cover - external service
         logger.warning("MongoDB unavailable; skipping demo user seeding: {}", exc)
+
+
+DIST_DIR = Path(__file__).resolve().parent.parent / "frontend_dist"
+INDEX_FILE = DIST_DIR / "index.html"
+ASSETS_DIR = DIST_DIR / "assets"
+
+if ASSETS_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
+
+
+def spa_available() -> bool:
+    return INDEX_FILE.exists()
+
+
+@app.get("/", include_in_schema=False)
+async def serve_root() -> JSONResponse | FileResponse:
+    if spa_available():
+        return FileResponse(INDEX_FILE)
+    return JSONResponse({"status": "ok", "message": "frontend bundle missing; API operational"})
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+async def serve_spa(full_path: str) -> FileResponse | JSONResponse:
+    if not spa_available():
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
+
+    candidate = DIST_DIR / full_path
+    if candidate.exists() and candidate.is_file():
+        return FileResponse(candidate)
+    return FileResponse(INDEX_FILE)
 

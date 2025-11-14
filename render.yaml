@@ -1,10 +1,11 @@
 services:
   - type: web
-    name: liverlink-backend
-    env: python
+    name: liverlink-app
+    env: docker
     plan: starter
-    buildCommand: bash ./scripts/render-backend-build.sh
-    startCommand: bash ./scripts/render-backend-start.sh
+    dockerfilePath: backend/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
     autoDeploy: true
     envVars:
       - key: MONGODB_URL
@@ -25,13 +26,4 @@ services:
         sync: false
       - key: TWILIO_PHONE
         sync: false
-
-  - type: static_site
-    name: liverlink-frontend
-    buildCommand: bash ./scripts/render-frontend-build.sh
-    publishPath: frontend/dist
-    autoDeploy: true
-    envVars:
-      - key: VITE_API_BASE_URL
-        value: https://liverlink-backend.onrender.com
 
