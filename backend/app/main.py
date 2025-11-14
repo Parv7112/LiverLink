@@ -153,15 +153,15 @@ def spa_available() -> bool:
     return INDEX_FILE.exists()
 
 
-@app.get("/", include_in_schema=False)
-async def serve_root() -> JSONResponse | FileResponse:
+@app.get("/", include_in_schema=False, response_model=None)
+async def serve_root():
     if spa_available():
         return FileResponse(INDEX_FILE)
     return JSONResponse({"status": "ok", "message": "frontend bundle missing; API operational"})
 
 
-@app.get("/{full_path:path}", include_in_schema=False)
-async def serve_spa(full_path: str) -> FileResponse | JSONResponse:
+@app.get("/{full_path:path}", include_in_schema=False, response_model=None)
+async def serve_spa(full_path: str):
     if not spa_available():
         return JSONResponse({"detail": "Not Found"}, status_code=404)
 
