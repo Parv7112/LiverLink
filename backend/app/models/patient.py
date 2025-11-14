@@ -25,6 +25,23 @@ class Patient(BaseModel):
     or_available: bool
     survival_6hr_prob: float | None = None
     created_at: datetime | None = None
+    # Additional clinical markers
+    albumin: float | None = None
+    sodium: float | None = None
+    platelet_count: float | None = None
+    child_pugh_score: float | None = None
+    hepatocellular_carcinoma: bool | None = None
+    diabetes: bool | None = None
+    renal_failure: bool | None = None
+    ventilator_dependent: bool | None = None
+    # Immunological
+    hla_antibody_level: float | None = None
+    # Logistical
+    distance_to_donor_km: float | None = None
+    icu_bed_available: bool | None = None
+    # Contact
+    surgeon_phone: str | None = None
+    hospital: str | None = None
 
 
 class PatientList(BaseModel):

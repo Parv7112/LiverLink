@@ -39,6 +39,7 @@ class AllocationState(TypedDict):
 
 
 DEFAULT_FEATURE_VALUES = {
+    # Core markers
     "meld": 18.0,
     "age": 52.0,
     "comorbidities": 2.0,
@@ -48,6 +49,18 @@ DEFAULT_FEATURE_VALUES = {
     "ascites_grade": 1.0,
     "encephalopathy_grade": 1.0,
     "hospitalized_last_7d": 0.0,
+    # Additional clinical
+    "albumin": 3.5,
+    "sodium": 140.0,
+    "platelet_count": 150.0,
+    "child_pugh_score": 7.0,
+    "hepatocellular_carcinoma": 0.0,
+    "diabetes": 0.0,
+    "renal_failure": 0.0,
+    "ventilator_dependent": 0.0,
+    # Logistical
+    "distance_to_donor_km": 200.0,
+    "icu_bed_available": 0.0,
 }
 
 
@@ -70,31 +83,37 @@ class OrganAllocationAgent:
 
     @staticmethod
     def _to_serializable(payload: Any) -> Any:
-        def _convert(value: Any) -> Any:
-            if isinstance(value, datetime):
-                return value.isoformat()
-            if isinstance(value, ObjectId):
-                return str(value)
-            return value
+        """Recursively convert non-JSON-serializable types to serializable ones."""
+        def _convert(obj: Any) -> Any:
+            if isinstance(obj, datetime):
+                return obj.isoformat()
+            if isinstance(obj, ObjectId):
+                return str(obj)
+            if isinstance(obj, dict):
+                return {k: _convert(v) for k, v in obj.items()}
+            if isinstance(obj, (list, tuple)):
+                return [_convert(item) for item in obj]
+            return obj
 
         try:
-            return json.loads(json.dumps(payload, default=_convert))
-        except Exception:
-            return payload
+            converted = _convert(payload)
+            # Validate it's JSON serializable
+            json.dumps(converted)
+            return converted
+        except Exception as exc:
+            logger.warning(f"Failed to serialize payload: {exc}")
+            return str(payload)
 
     def _build_graph(self):
         graph = StateGraph(AllocationState)
         graph.add_node("fetch_patients", self._fetch_patients)
         graph.add_node("predict", self._predict_survival)
         graph.add_node("rank", self._rank_patients)
-        graph.add_node("alert", self._alert_surgeon)
-        graph.add_node("evaluate", self._evaluate_outcome)
+        # Removed alert and evaluate nodes - manual allocation only
 
         graph.add_edge("fetch_patients", "predict")
         graph.add_edge("predict", "rank")
-        graph.add_edge("rank", "alert")
-        graph.add_conditional_edges("alert", self._alert_condition, {"retry": "rank", "success": "evaluate"})
-        graph.add_edge("evaluate", END)
+        graph.add_edge("rank", END)  # End after ranking, wait for manual action
 
         graph.set_entry_point("fetch_patients")
         return graph.compile()
@@ -235,21 +254,69 @@ class OrganAllocationAgent:
         patients = state.get("patients", [])
         logger.info(f"Ranking {len(patients)} patients from state")
         ranked = []
+        
         for patient in patients:
+            # Core factors
             urgency = patient.get("meld", 0) / 40
             survival = patient.get("survival_6hr_prob", 0.0)
             hla = patient.get("hla_match", 0) / 100
-            score = 0.5 * urgency + 0.35 * survival + 0.15 * hla
-            ranked.append({**patient, "allocation_score": score})
+            
+            # Geographic proximity (closer is better, normalize to 0-1000km)
+            distance = 1 - min(patient.get("distance_to_donor_km", 500), 1000) / 1000
+            
+            # Hospital readiness
+            icu_ready = 1.0 if patient.get("icu_bed_available") else 0.3
+            or_ready = 1.0 if patient.get("or_available") else 0.5
+            readiness = (icu_ready + or_ready) / 2
+            
+            # Clinical risk factors (lower is better)
+            hcc_penalty = 0.2 if patient.get("hepatocellular_carcinoma") else 0.0
+            diabetes_penalty = 0.1 if patient.get("diabetes") else 0.0
+            renal_penalty = 0.15 if patient.get("renal_failure") else 0.0
+            ventilator_penalty = 0.25 if patient.get("ventilator_dependent") else 0.0
+            risk_penalty = hcc_penalty + diabetes_penalty + renal_penalty + ventilator_penalty
+            
+            # Immunological compatibility (beyond basic HLA)
+            antibody_level = patient.get("hla_antibody_level", 0) / 100
+            immuno_score = (hla + (1 - antibody_level)) / 2
+            
+            # Weighted allocation score
+            score = (
+                0.35 * urgency +           # Medical urgency (MELD)
+                0.25 * survival +          # Survival probability
+                0.12 * immuno_score +      # Immunological compatibility
+                0.10 * distance +          # Geographic proximity
+                0.10 * readiness +         # Hospital readiness
+                0.08 * (1 - risk_penalty)  # Clinical risk adjustment
+            )
+            
+            # Store component scores for transparency
+            patient["allocation_score"] = score
+            patient["urgency_score"] = urgency
+            patient["survival_score"] = survival
+            patient["immuno_score"] = immuno_score
+            patient["distance_score"] = distance
+            patient["readiness_score"] = readiness
+            patient["risk_adjustment"] = 1 - risk_penalty
+            
+            ranked.append(patient)
+        
         ranked.sort(key=lambda item: item.get("allocation_score", 0), reverse=True)
         logger.info(f"Ranked {len(ranked)} patients. Top 3: {[p.get('name') for p in ranked[:3]]}")
-        highlight = (
-            f"Top candidate {ranked[0]['name']} with survival {ranked[0]['survival_6hr_prob']:.0%}"
-            if ranked
-            else "No candidates available"
-        )
+        
+        if ranked:
+            top = ranked[0]
+            highlight = (
+                f"Top candidate {top['name']} (MELD {top.get('meld', '?')}) "
+                f"with survival {top['survival_6hr_prob']:.0%}, "
+                f"distance {top.get('distance_to_donor_km', '?')}km, "
+                f"score {top['allocation_score']:.3f}"
+            )
+        else:
+            highlight = "No candidates available"
+        
         reasoning = state["reasoning"] + [
-            f"Ranked {len(ranked)} patients. {highlight}.",
+            f"Ranked {len(ranked)} patients using multi-factor scoring. {highlight}.",
         ]
         timeline = state["timeline"] + [
             {"event": "rank_patients", "timestamp": datetime.utcnow().isoformat()},

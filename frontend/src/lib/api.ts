@@ -97,3 +97,20 @@ export async function fetchAgentHistory() {
   const response = await apiClient.get("/agent/history");
   return AgentHistorySchema.parse(response.data);
 }
+
+export async function contactPatient(qrCodeId: string, patientId: string, message: string) {
+  const response = await apiClient.post(`/donors/${qrCodeId}/contact-patient`, {
+    patient_id: patientId,
+    donor_qr_code_id: qrCodeId,
+    message,
+  });
+  return response.data;
+}
+
+export async function acceptAllocation(qrCodeId: string, patientId: string, allocationId: string) {
+  const response = await apiClient.post(`/donors/${qrCodeId}/accept-allocation`, {
+    patient_id: patientId,
+    allocation_id: allocationId,
+  });
+  return response.data;
+}

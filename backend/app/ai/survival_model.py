@@ -13,6 +13,7 @@ from loguru import logger
 
 MODEL_FILENAME = "survival_6hr_model.pkl"
 MODEL_FEATURES = [
+    # Core liver disease markers
     "meld",
     "age",
     "comorbidities",
@@ -22,6 +23,18 @@ MODEL_FEATURES = [
     "ascites_grade",
     "encephalopathy_grade",
     "hospitalized_last_7d",
+    # Additional clinical markers
+    "albumin",
+    "sodium",
+    "platelet_count",
+    "child_pugh_score",
+    "hepatocellular_carcinoma",
+    "diabetes",
+    "renal_failure",
+    "ventilator_dependent",
+    # Logistical factors
+    "distance_to_donor_km",
+    "icu_bed_available",
 ]
 FEATURE_INDEX = {name: idx for idx, name in enumerate(MODEL_FEATURES)}
 
