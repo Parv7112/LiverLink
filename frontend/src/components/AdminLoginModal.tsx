@@ -129,6 +129,18 @@ export function AdminLoginModal() {
           onChange={(event) => setRegisterPayload((prev) => ({ ...prev, password: event.target.value }))}
         />
       </label>
+      <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+        Role
+        <select
+          className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900/60 p-3 text-sm text-slate-100"
+          value={registerPayload.role}
+          onChange={(event) => setRegisterPayload((prev) => ({ ...prev, role: event.target.value }))}
+        >
+          <option value="surgeon">Surgeon</option>
+          <option value="coordinator">Coordinator</option>
+          <option value="admin">Admin</option>
+        </select>
+      </label>
       {registerError && <p className="text-xs text-medical-red">{registerError}</p>}
       <div className="flex items-center gap-3">
         <motion.button
