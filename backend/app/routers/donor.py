@@ -11,9 +11,11 @@ from motor.motor_asyncio import AsyncIOMotorCollection
 from ..agents.organ_allocation_agent import OrganAllocationAgent
 from ..database import db
 from ..models.donor import Donor, DonorCreate
-from ..routers.auth import get_current_user
+from ..models.user import UserPublic
+from ..routers.auth import get_current_user, require_roles
 
 router = APIRouter(prefix="/donors", tags=["donors"])
+CoordinatorUser = Annotated[UserPublic, Depends(require_roles("coordinator"))]
 
 
 async def get_donor_collection() -> AsyncIOMotorCollection:
@@ -27,9 +29,9 @@ def serialize_id(document):
 
 @router.post("/", response_model=Donor, status_code=status.HTTP_201_CREATED)
 async def create_donor(
+    _: CoordinatorUser,
     payload: DonorCreate,
     donors: AsyncIOMotorCollection = Depends(get_donor_collection),
-    _: dict = Depends(get_current_user),
 ) -> Donor:
     existing = await donors.find_one({"qr_code_id": payload.qr_code_id})
     if existing:
@@ -44,7 +46,11 @@ async def create_donor(
 
 
 @router.get("/{qr_code_id}", response_model=Donor)
-async def get_donor(qr_code_id: str, donors: AsyncIOMotorCollection = Depends(get_donor_collection), _: dict = Depends(get_current_user)) -> Donor:
+async def get_donor(
+    _: CoordinatorUser,
+    qr_code_id: str,
+    donors: AsyncIOMotorCollection = Depends(get_donor_collection),
+) -> Donor:
     donor = await donors.find_one({"qr_code_id": qr_code_id})
     if not donor:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Donor not found")
@@ -53,10 +59,10 @@ async def get_donor(qr_code_id: str, donors: AsyncIOMotorCollection = Depends(ge
 
 @router.post("/{qr_code_id}/allocate")
 async def allocate_donor(
+    _: CoordinatorUser,
     qr_code_id: str,
     agent: Annotated[OrganAllocationAgent, Depends(lambda: router.agent)],
     donors: AsyncIOMotorCollection = Depends(get_donor_collection),
-    _: dict = Depends(get_current_user),
 ) -> dict:
     donor = await donors.find_one({"qr_code_id": qr_code_id})
     if not donor:

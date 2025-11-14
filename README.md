@@ -60,9 +60,12 @@ Key variables:
 
 ### 2. Local Development
 #### Backend
+> **Tip:** Use Python 3.11 for the backend virtualenv so scikit-learn wheels install without compiling.
+
 ```bash
 cd backend
-python3 -m venv .venv && source .venv/bin/activate
+/usr/local/bin/python3.11 -m venv .venv && source .venv/bin/activate
+pip install --upgrade pip
 pip install -r requirements.txt
 uvicorn app.main:socket_app --reload --host 0.0.0.0 --port 8000
 ```
@@ -145,6 +148,11 @@ Outputs `app/ai/survival_6hr_model.pkl` (overwrites heuristic bootstrap model). 
 - `WebSocket /ws/agent` + `Socket.IO` → realtime event bus.
 
 Swagger: [http://localhost:8000/docs](http://localhost:8000/docs)
+
+### Role-based access controls
+- **Coordinator** — full donor intake + allocation powers (`/donors`, `/agent/allocate`).
+- **Surgeon/Admin** — read-only dashboards (`/patients`, `/agent/history`, realtime feed). Coordinator-only endpoints return `403`.
+- Every React route is wrapped in a guard so unauthenticated users see a login prompt, while role-mismatched users see a gentle access warning. JWT responses now include the user profile for client-side gating.
 
 ---
 

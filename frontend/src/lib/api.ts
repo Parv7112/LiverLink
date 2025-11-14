@@ -18,22 +18,38 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
-const TokenSchema = z.object({
-  access_token: z.string(),
+const UserSchema = z.object({
+  _id: z.string(),
+  email: z.string().email(),
+  name: z.string(),
+  role: z.enum(["coordinator", "surgeon", "admin"]),
+  created_at: z.string(),
 });
 
-export async function login(email: string, password: string) {
+const AuthResponseSchema = z.object({
+  access_token: z.string(),
+  token_type: z.string().default("bearer"),
+  user: UserSchema,
+  message: z.string().optional(),
+});
+
+export type AuthSession = z.infer<typeof AuthResponseSchema>;
+
+export async function login(email: string, password: string, role: "coordinator" | "surgeon" | "admin") {
   const form = new URLSearchParams();
   form.append("username", email);
   form.append("password", password);
+  form.append("role", role);
   const response = await apiClient.post("/auth/login", form);
-  const data = TokenSchema.parse(response.data);
+  const data = AuthResponseSchema.parse(response.data);
   localStorage.setItem("liverlink_token", data.access_token);
-  return data.access_token;
+  localStorage.setItem("liverlink_user", JSON.stringify(data.user));
+  return data;
 }
 
 export function logout() {
   localStorage.removeItem("liverlink_token");
+  localStorage.removeItem("liverlink_user");
 }
 
 const RegisterSchema = z.object({

@@ -175,7 +175,7 @@ const parseDonorPayload = (raw: string): ParsedDonorPayload => {
 
 function DonorScan() {
   const [qrCode, setQrCode] = useState<string | null>(null);
-  const { token, email, requireAuth, openLogin, pushMessage } = useAuth();
+  const { token, email, requireAuth, requireRole, openLogin, pushMessage } = useAuth();
   const [status, setStatus] = useState<string>(token ? "Scan donor QR to begin" : "Authenticate to begin scanning.");
   const [donorData, setDonorData] = useState<DonorFormState>(emptyDonorState);
   const [loading, setLoading] = useState(false);
@@ -206,6 +206,9 @@ function DonorScan() {
     async (event: React.FormEvent<HTMLFormElement>) => {
       event.preventDefault();
       if (!requireAuth("Please log in before registering a donor.")) {
+        return;
+      }
+      if (!requireRole(["coordinator"], "Coordinator access required for donor intake.")) {
         return;
       }
       if (!qrCode) {

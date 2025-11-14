@@ -76,7 +76,7 @@ async def healthcheck() -> Dict[str, str]:
 @app.post("/agent/allocate")
 async def trigger_allocation(
     payload: Dict[str, Any],
-    _: Dict[str, Any] = Depends(auth.get_current_user),
+    _: Any = Depends(auth.require_roles("coordinator")),
 ) -> JSONResponse:
     qr_code_id = payload.get("qr_code_id")
     organ = payload.get("organ", "liver")

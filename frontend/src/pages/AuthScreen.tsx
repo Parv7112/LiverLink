@@ -14,7 +14,7 @@ export function AuthScreen() {
   const handleLogin = useCallback(
     async (event: React.FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      await login(credentials.email, credentials.password);
+      await login(credentials.email, credentials.password, "coordinator");
     },
     [credentials, login]
   );

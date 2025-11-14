@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, EmailStr, Field
 
 
+UserRole = Literal["coordinator", "surgeon", "admin"]
+
+
 class UserCreate(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(min_length=8, max_length=128)
     name: str
-    role: str = Field(default="surgeon", pattern="^(surgeon|coordinator|admin)$")
+    role: UserRole = Field(default="surgeon")
 
 
 class UserLogin(BaseModel):
@@ -22,13 +25,18 @@ class UserPublic(BaseModel):
     id: str = Field(alias="_id")
     email: EmailStr
     name: str
-    role: str
+    role: UserRole
     created_at: datetime
 
 
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class AuthResponse(Token):
+    user: UserPublic
+    message: str = "Authenticated"
 
 
 class TokenPayload(BaseModel):
