@@ -97,6 +97,8 @@ async def agent_history(limit: int = 10, _: Dict[str, Any] = Depends(auth.get_cu
     for entry in entries:
         if "donor" in entry and entry["donor"].get("_id"):
             entry["donor"]["_id"] = str(entry["donor"]["_id"])
+        if entry.get("_id"):
+            entry["_id"] = str(entry["_id"])
     return {"history": entries}
 
 

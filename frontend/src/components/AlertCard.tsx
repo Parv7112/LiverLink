@@ -32,7 +32,9 @@ export function AlertCard({ attempt, status, message, patient }: Props) {
       <p className="mt-3 text-base font-semibold text-slate-100">{message}</p>
       {patient && (
         <p className="mt-2 text-xs text-slate-400">
-          Patient {patient.name} · MELD {patient.meld} · Survival {Math.round((patient.survival_6hr_prob ?? 0) * 100)}%
+          Patient {patient.name} · Blood {patient.blood_type ?? "—"} · MELD {patient.meld ?? "—"} · 6hr{" "}
+          {Math.round((patient.survival_6hr_prob ?? patient.survival_hint ?? 0) * 100)}% · ETA{" "}
+          {patient.transport_eta_min ?? patient.eta_min ?? "—"}m · OR {patient.or_available ? "ready" : "standby"}
         </p>
       )}
     </motion.div>

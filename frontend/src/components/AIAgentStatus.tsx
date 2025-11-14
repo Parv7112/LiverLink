@@ -95,7 +95,15 @@ export function AIAgentStatus({ status, progress }: Props) {
                   <div>
                     <p className="text-lg font-semibold text-slate-100">{candidate.name ?? "Unknown"}</p>
                     <p className="text-xs uppercase text-slate-500">
-                      MELD {candidate.meld ?? "—"} · Wait {candidate.waitlist_days ?? "—"}d · ETA {candidate.eta_min ?? "—"}m
+                      MELD {candidate.meld ?? "—"} · Wait {candidate.waitlist_days ?? "—"}d · ETA{" "}
+                      {candidate.eta_min ?? candidate.transport_eta_min ?? "—"}m
+                    </p>
+                    <p className="text-[11px] uppercase text-slate-500">
+                      Blood {candidate.blood_type ?? "—"} · Age {candidate.age ?? "—"} · OR{" "}
+                      {candidate.or_available ? "Ready" : "Standby"}
+                    </p>
+                    <p className="text-[11px] uppercase text-slate-500">
+                      1yr {candidate.predicted_1yr_survival ?? "—"}% · Death risk {candidate.death_risk_6hr ?? "—"}%
                     </p>
                   </div>
                   <motion.span

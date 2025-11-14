@@ -1,52 +1,204 @@
 import { motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { QRScanner } from "../components/QRScanner";
 import { useAuth } from "../contexts/AuthContext";
 import { registerDonor, triggerAllocation } from "../lib/api";
 
 const bloodTypes = ["O+", "A+", "B+", "AB+", "O-", "A-", "B-", "AB-"];
 
+type DonorFormState = {
+  organ: string;
+  blood_type: string;
+  age: number | undefined;
+  cause_of_death: string;
+  crossmatch_score: number | undefined;
+  procurement_hospital: string;
+  arrival_eta_min: number | undefined;
+  hla_a?: string;
+  hla_b?: string;
+  hla_drb1?: string;
+  donor_meld_context?: number | undefined;
+};
+
+const emptyDonorState: DonorFormState = {
+  organ: "",
+  blood_type: "",
+  age: undefined,
+  cause_of_death: "",
+  crossmatch_score: undefined,
+  procurement_hospital: "",
+  arrival_eta_min: undefined,
+  hla_a: "",
+  hla_b: "",
+  hla_drb1: "",
+  donor_meld_context: undefined,
+};
+
+type ParsedDonorPayload = {
+  qrCodeId?: string;
+  donor?: Partial<DonorFormState>;
+};
+
+const numericOrUndefined = (value: unknown): number | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return undefined;
+};
+
+const cleanString = (value: unknown): string => {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  return "";
+};
+
+const normaliseFields = (record: Record<string, any>): ParsedDonorPayload => {
+  const alias = (keys: string[]): any => {
+    for (const key of keys) {
+      if (record[key] !== undefined && record[key] !== null) {
+        return record[key];
+      }
+    }
+    return undefined;
+  };
+
+  const donor: Partial<DonorFormState> = {
+    organ: cleanString(alias(["organ", "organ_type", "o"])),
+    blood_type: cleanString(alias(["blood_type", "bloodType", "blood", "bt"])),
+    age: numericOrUndefined(alias(["age", "donor_age"])),
+    cause_of_death: cleanString(alias(["cause_of_death", "cod", "cause"])),
+    crossmatch_score: numericOrUndefined(alias(["crossmatch_score", "crossmatch", "cm_score"])),
+    procurement_hospital: cleanString(alias(["procurement_hospital", "hospital", "facility"])),
+    arrival_eta_min: numericOrUndefined(alias(["arrival_eta_min", "eta", "arrival_eta"])),
+    hla_a: cleanString(alias(["hla_a", "hla_A", "hlaA", "HLA_A"])),
+    hla_b: cleanString(alias(["hla_b", "hla_B", "hlaB", "HLA_B"])),
+    hla_drb1: cleanString(alias(["hla_drb1", "hla_DRB1", "hlaDRB1", "HLA_DRB1"])),
+    donor_meld_context: numericOrUndefined(alias(["donor_meld_context", "meld_context", "meld"])),
+  };
+
+  const qrCodeId = cleanString(
+    alias(["qr_code_id", "qr", "qr_code", "qrCodeId", "wristband", "code", "id"])
+  );
+
+  const hasUsefulField = qrCodeId || Object.values(donor).some((value) => value !== "" && value !== undefined);
+
+  return hasUsefulField ? { qrCodeId: qrCodeId || undefined, donor } : {};
+};
+
+const parseKeyValuePairs = (raw: string): Record<string, string> => {
+  const map: Record<string, string> = {};
+  raw
+    .split(/[\r\n;,]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .forEach((entry) => {
+      const [key, ...rest] = entry.split(/[:=]/);
+      if (key && rest.length) {
+        map[key.trim()] = rest.join(":=").trim();
+      }
+    });
+  return map;
+};
+
+const decodeBase64 = (value: string): string | null => {
+  try {
+    return atob(value);
+  } catch {
+    try {
+      return atob(value.replace(/-/g, "+").replace(/_/g, "/"));
+    } catch {
+      return null;
+    }
+  }
+};
+
+const parseDonorPayload = (raw: string): ParsedDonorPayload => {
+  const attempts: Array<Record<string, any>> = [];
+  const trimmed = raw.trim();
+
+  const tryJson = (input: string) => {
+    try {
+      const parsed = JSON.parse(input);
+      if (parsed && typeof parsed === "object") {
+        attempts.push(parsed as Record<string, any>);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  tryJson(trimmed);
+  const base64Decoded = decodeBase64(trimmed);
+  if (base64Decoded) {
+    tryJson(base64Decoded);
+  }
+
+  if (trimmed.includes("=")) {
+    try {
+      const qp = trimmed.includes("?") ? trimmed.split("?").pop() ?? trimmed : trimmed;
+      const params = new URLSearchParams(qp);
+      const record: Record<string, string> = {};
+      params.forEach((value, key) => {
+        record[key] = value;
+      });
+      if (Object.keys(record).length > 0) {
+        attempts.push(record);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  const kv = parseKeyValuePairs(trimmed);
+  if (Object.keys(kv).length > 0) {
+    attempts.push(kv);
+  }
+
+  for (const candidate of attempts) {
+    const result = normaliseFields(candidate);
+    if (result.qrCodeId || result.donor) {
+      return result;
+    }
+  }
+
+  return {};
+};
+
 function DonorScan() {
   const [qrCode, setQrCode] = useState<string | null>(null);
   const { token, email, requireAuth, openLogin, pushMessage } = useAuth();
   const [status, setStatus] = useState<string>(token ? "Scan donor QR to begin" : "Authenticate to begin scanning.");
-  const [donorData, setDonorData] = useState({
-    organ: "",
-    blood_type: "",
-    age: undefined as number | undefined,
-    cause_of_death: "",
-    crossmatch_score: undefined as number | undefined,
-    procurement_hospital: "",
-    arrival_eta_min: undefined as number | undefined,
-  });
+  const [donorData, setDonorData] = useState<DonorFormState>(emptyDonorState);
   const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     setStatus(token ? "Scan donor QR to begin" : "Authenticate to begin scanning.");
   }, [token]);
 
   const onScan = useCallback((value: string) => {
-    let parsed: any = null;
-    try {
-      parsed = JSON.parse(value);
-    } catch {
-      // not JSON
+    const parsed = parseDonorPayload(value);
+    if (parsed.donor) {
+        setDonorData((prev) => ({
+          ...prev,
+          ...parsed.donor,
+        }));
     }
-    if (parsed && typeof parsed === "object") {
-      setDonorData({
-        organ: parsed.organ ?? "",
-        blood_type: parsed.blood_type ?? "",
-        age: typeof parsed.age === "number" ? parsed.age : undefined,
-        cause_of_death: parsed.cause_of_death ?? "",
-        crossmatch_score: typeof parsed.crossmatch_score === "number" ? parsed.crossmatch_score : undefined,
-        procurement_hospital: parsed.procurement_hospital ?? "",
-        arrival_eta_min: typeof parsed.arrival_eta_min === "number" ? parsed.arrival_eta_min : undefined,
-      });
-      setQrCode(parsed.qr_code_id ?? value);
+    if (parsed.qrCodeId) {
+      setQrCode(parsed.qrCodeId);
       setStatus("QR detected and donor profile pre-filled.");
     } else {
       setQrCode(value);
-      setStatus(`QR detected: ${value}`);
+      setStatus("QR captured but we could not read metadata. Please verify fields manually.");
     }
   }, []);
 
@@ -65,15 +217,16 @@ function DonorScan() {
         await registerDonor({ qr_code_id: qrCode, ...donorData });
         setStatus("Donor registered. Triggering AI allocation...");
         await triggerAllocation(qrCode, donorData.organ);
-        setStatus("Allocation initiated. Monitor AI Agent status.");
+        setStatus("Allocation initiated. Redirecting to Agent Log...");
         pushMessage("Donor registered and allocation started.");
+        navigate("/agent-log");
       } catch (error: any) {
         setStatus(error?.response?.data?.detail ?? "Unable to register donor.");
       } finally {
         setLoading(false);
       }
     },
-    [qrCode, donorData, requireAuth, pushMessage]
+    [qrCode, donorData, requireAuth, pushMessage, navigate]
   );
 
   const hospitalOptions = useMemo(
@@ -183,6 +336,42 @@ function DonorScan() {
                 onChange={(event) => setDonorData((prev) => ({ ...prev, arrival_eta_min: Number(event.target.value) }))}
               />
             </label>
+          </div>
+          
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-widest text-slate-500 mb-3">HLA Typing (Optional)</p>
+            <div className="grid gap-4 md:grid-cols-3">
+              <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                HLA-A
+                <input
+                  type="text"
+                  placeholder="e.g., A*02:01"
+                  className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900/60 p-3 text-sm text-slate-100"
+                  value={donorData.hla_a || ""}
+                  onChange={(event) => setDonorData((prev) => ({ ...prev, hla_a: event.target.value }))}
+                />
+              </label>
+              <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                HLA-B
+                <input
+                  type="text"
+                  placeholder="e.g., B*07:02"
+                  className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900/60 p-3 text-sm text-slate-100"
+                  value={donorData.hla_b || ""}
+                  onChange={(event) => setDonorData((prev) => ({ ...prev, hla_b: event.target.value }))}
+                />
+              </label>
+              <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                HLA-DRB1
+                <input
+                  type="text"
+                  placeholder="e.g., DRB1*15:01"
+                  className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900/60 p-3 text-sm text-slate-100"
+                  value={donorData.hla_drb1 || ""}
+                  onChange={(event) => setDonorData((prev) => ({ ...prev, hla_drb1: event.target.value }))}
+                />
+              </label>
+            </div>
           </div>
           <motion.button
             type="submit"

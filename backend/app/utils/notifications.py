@@ -29,16 +29,19 @@ class NotificationService:
         if self.client is None:
             logger.info("Mock SMS: %s -> %s", message.to, message.body)
             return
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(
-            None,
-            lambda: self.client.messages.create(
-                to=message.to,
-                from_=self.sender_phone,
-                body=message.body,
-            ),
-        )
-        logger.info("SMS sent to %s", message.to)
+        try:
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(
+                None,
+                lambda: self.client.messages.create(
+                    to=message.to,
+                    from_=self.sender_phone,
+                    body=message.body,
+                ),
+            )
+            logger.info("SMS sent to %s", message.to)
+        except Exception as exc:
+            logger.warning("SMS delivery failed for %s: %s. Continuing allocation.", message.to, exc)
 
 
 notification_service = NotificationService()

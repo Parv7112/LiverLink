@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, TypedDict
 
+from bson import ObjectId
 from langchain.tools import Tool
 from langgraph.graph import StateGraph
 from langgraph.graph.graph import END
@@ -37,6 +38,19 @@ class AllocationState(TypedDict):
     timeline: List[Dict[str, Any]]
 
 
+DEFAULT_FEATURE_VALUES = {
+    "meld": 18.0,
+    "age": 52.0,
+    "comorbidities": 2.0,
+    "bilirubin": 1.2,
+    "inr": 1.1,
+    "creatinine": 1.0,
+    "ascites_grade": 1.0,
+    "encephalopathy_grade": 1.0,
+    "hospitalized_last_7d": 0.0,
+}
+
+
 class OrganAllocationAgent:
     def __init__(self, event_sink) -> None:
         self.event_sink = event_sink
@@ -53,6 +67,20 @@ class OrganAllocationAgent:
             "or_status": check_or_status,
         }
         self.graph = self._build_graph()
+
+    @staticmethod
+    def _to_serializable(payload: Any) -> Any:
+        def _convert(value: Any) -> Any:
+            if isinstance(value, datetime):
+                return value.isoformat()
+            if isinstance(value, ObjectId):
+                return str(value)
+            return value
+
+        try:
+            return json.loads(json.dumps(payload, default=_convert))
+        except Exception:
+            return payload
 
     def _build_graph(self):
         graph = StateGraph(AllocationState)
@@ -88,38 +116,65 @@ class OrganAllocationAgent:
         if self.langfuse:
             trace = self.langfuse.trace(
                 name="liverlink_allocation",
-                input=donor,
+               input=self._to_serializable(donor),
                 metadata={"organ": donor.get("organ"), "qr_code": donor.get("qr_code_id")},
             )
         state = initial_state
-        async for step, current_state in self.graph.astream(state):
-            state = current_state
-            message = {
-                "step": step,
-                "state": self._serialize_state(current_state),
-            }
-            await self.event_sink(AgentEvent(type="agent_step", payload=message))
+        error: Exception | None = None
+        try:
+            async for chunk in self.graph.astream(state):
+                # LangGraph astream yields {node_name: state_dict}
+                if isinstance(chunk, dict):
+                    for step_name, current_state in chunk.items():
+                        state = current_state
+                        logger.info(f"Agent step: {step_name}, state keys: {list(current_state.keys())}")
+                        message = {
+                            "step": step_name,
+                            "state": self._serialize_state(current_state),
+                        }
+                        await self.event_sink(AgentEvent(type="agent_step", payload=message))
+                        if trace:
+                            trace.span(
+                                name=f"step_{step_name}",
+                                input={"step": step_name},
+                                output=self._to_serializable(current_state),
+                            )
+                else:
+                    logger.warning(f"Unexpected chunk type: {type(chunk)}")
+        except Exception as exc:
+            error = exc
+            logger.error(f"Agent run failed: {exc}")
+            raise
+        finally:
             if trace:
-                trace.span(
-                    name=f"step_{step}",
-                    input=message,
-                    output=current_state,
-                )
-        if trace:
-            trace.update(output=state, status="completed")
-        await allocation_memory.log(
-            {
-                "donor": donor,
-                "ranked_patients": state.get("ranked_patients", [])[:5],
-                "accepted_patient": state.get("accepted_patient"),
-                "timeline": state.get("timeline"),
-            }
-        )
+                if error:
+                    trace.update(
+                        output={"error": str(error)},
+                        status="error",
+                    )
+                else:
+                    trace.update(
+                        output=self._serialize_state(state),
+                        status="completed",
+                    )
+        
+        # Log to memory after graph completes
+        logger.info(f"Logging to memory: {len(state.get('ranked_patients', []))} ranked patients")
+        memory_entry = {
+            "donor": donor,
+            "ranked_patients": state.get("ranked_patients", [])[:5],
+            "accepted_patient": state.get("accepted_patient"),
+            "timeline": state.get("timeline"),
+        }
+        logger.info(f"Memory entry ranked_patients count: {len(memory_entry['ranked_patients'])}")
+        await allocation_memory.log(memory_entry)
         return state
 
     async def _fetch_patients(self, state: AllocationState) -> AllocationState:
         result_json = await self.tools["fetch"].arun("")
+        logger.info(f"Fetch tool returned: {result_json[:200] if result_json else 'empty'}")
         patients = json.loads(result_json)
+        logger.info(f"Parsed {len(patients)} patients. Sample: {patients[0] if patients else 'none'}")
         reasoning = state["reasoning"] + [f"Fetched {len(patients)} patients from FHIR service."]
         timeline = state["timeline"] + [
             {"event": "fetch_patients", "timestamp": datetime.utcnow().isoformat()},
@@ -139,13 +194,25 @@ class OrganAllocationAgent:
 
     async def _predict_survival(self, state: AllocationState) -> AllocationState:
         patients = state["patients"]
-        features = [[patient.get(feature, 0) for feature in MODEL_FEATURES] for patient in patients]
-        if features:
-            predictions = await predict_survival(features)
+        feature_matrix: List[List[float]] = []
+        for patient in patients:
+            row = []
+            for feature in MODEL_FEATURES:
+                value = patient.get(feature)
+                if value is None:
+                    value = DEFAULT_FEATURE_VALUES.get(feature, 0.0)
+                    patient[feature] = value
+                row.append(float(value))
+            feature_matrix.append(row)
+        if feature_matrix:
+            predictions = await predict_survival(feature_matrix)
         else:
             predictions = []
         for patient, prob in zip(patients, predictions):
             patient["survival_6hr_prob"] = prob
+        if not predictions:
+            for patient in patients:
+                patient["survival_6hr_prob"] = patient.get("survival_hint", 0.5)
         reasoning = state["reasoning"] + ["Calculated 6-hour survival probabilities for candidates."]
         timeline = state["timeline"] + [
             {"event": "predict_survival", "timestamp": datetime.utcnow().isoformat()},
@@ -165,14 +232,17 @@ class OrganAllocationAgent:
 
     async def _rank_patients(self, state: AllocationState) -> AllocationState:
         donor = state["donor"]
+        patients = state.get("patients", [])
+        logger.info(f"Ranking {len(patients)} patients from state")
         ranked = []
-        for patient in state["patients"]:
+        for patient in patients:
             urgency = patient.get("meld", 0) / 40
             survival = patient.get("survival_6hr_prob", 0.0)
             hla = patient.get("hla_match", 0) / 100
             score = 0.5 * urgency + 0.35 * survival + 0.15 * hla
             ranked.append({**patient, "allocation_score": score})
         ranked.sort(key=lambda item: item.get("allocation_score", 0), reverse=True)
+        logger.info(f"Ranked {len(ranked)} patients. Top 3: {[p.get('name') for p in ranked[:3]]}")
         highlight = (
             f"Top candidate {ranked[0]['name']} with survival {ranked[0]['survival_6hr_prob']:.0%}"
             if ranked
@@ -211,7 +281,10 @@ class OrganAllocationAgent:
             f"Surgeon alert: {patient['name']} survival {patient['survival_6hr_prob']:.0%}, MELD {patient['meld']}"
         )
         payload = json.dumps({"phone": patient.get("surgeon_phone", "+15551234567"), "message": message})
-        await self.tools["alert"].arun(payload)
+        try:
+            await self.tools["alert"].arun(payload)
+        except Exception as exc:
+            logger.warning("Alert tool failed for %s: %s. Continuing allocation.", patient.get("name"), exc)
         reasoning = state["reasoning"] + [f"Alerted surgeon for {patient['name']} (attempt {iteration})."]
         timeline = state["timeline"] + [
             {"event": "alert_surgeon", "timestamp": datetime.utcnow().isoformat(), "patient": patient["id"]},
@@ -312,6 +385,12 @@ class OrganAllocationAgent:
                     "waitlist_days",
                     "eta_min",
                     "hla_match",
+                    "blood_type",
+                    "age",
+                    "predicted_1yr_survival",
+                    "death_risk_6hr",
+                    "or_available",
+                    "transport_eta_min",
                 }
             }
 

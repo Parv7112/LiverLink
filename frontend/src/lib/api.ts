@@ -57,10 +57,14 @@ const DonorSchema = z.object({
   crossmatch_score: z.number(),
   procurement_hospital: z.string(),
   arrival_eta_min: z.number(),
+  hla_a: z.string().optional(),
+  hla_b: z.string().optional(),
+  hla_drb1: z.string().optional(),
+  donor_meld_context: z.number().optional(),
 });
 
 export async function registerDonor(payload: z.infer<typeof DonorSchema>) {
-  const response = await apiClient.post("/donors", payload);
+  const response = await apiClient.post("/donors/", payload);
   return response.data;
 }
 

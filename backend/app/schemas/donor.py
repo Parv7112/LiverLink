@@ -14,5 +14,9 @@ def donor_document(donor: Dict[str, Any]) -> Dict[str, Any]:
         "crossmatch_score": donor.get("crossmatch_score"),
         "procurement_hospital": donor.get("procurement_hospital"),
         "arrival_eta_min": donor.get("arrival_eta_min"),
+        "hla_a": donor.get("hla_a"),
+        "hla_b": donor.get("hla_b"),
+        "hla_drb1": donor.get("hla_drb1"),
+        "donor_meld_context": donor.get("donor_meld_context"),
     }
 

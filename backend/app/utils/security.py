@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
-from jose import JWTError, jwt
+from jose import ExpiredSignatureError, JWTError, jwt
 from passlib.context import CryptContext
 
 from ..database import settings
@@ -31,6 +31,8 @@ def decode_token(token: str) -> Dict[str, Any]:
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
         return payload
+    except ExpiredSignatureError as exc:  # pragma: no cover - logged upstream
+        raise ValueError("Token expired") from exc
     except JWTError as exc:  # pragma: no cover - logged upstream
         raise ValueError("Invalid token") from exc
 

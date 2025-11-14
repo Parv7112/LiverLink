@@ -13,9 +13,16 @@ export type CandidateSummary = {
   meld?: number;
   waitlist_days?: number;
   eta_min?: number;
+  transport_eta_min?: number;
   survival_6hr_prob?: number;
   allocation_score?: number;
   hla_match?: number;
+  blood_type?: string;
+  age?: number;
+  predicted_1yr_survival?: number;
+  death_risk_6hr?: number;
+  or_available?: boolean;
+  survival_hint?: number;
 };
 
 export type AgentStatus = {
@@ -51,9 +58,16 @@ function normaliseCandidate(candidate: any): CandidateSummary {
     meld: candidate.meld,
     waitlist_days: candidate.waitlist_days,
     eta_min: candidate.eta_min,
+    transport_eta_min: candidate.transport_eta_min ?? candidate.eta_min,
     survival_6hr_prob: candidate.survival_6hr_prob,
     allocation_score: candidate.allocation_score,
     hla_match: candidate.hla_match,
+    blood_type: candidate.blood_type,
+    age: candidate.age,
+    predicted_1yr_survival: candidate.predicted_1yr_survival,
+    death_risk_6hr: candidate.death_risk_6hr,
+    or_available: candidate.or_available,
+    survival_hint: candidate.survival_hint,
   };
 }
 
