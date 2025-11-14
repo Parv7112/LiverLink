@@ -1,5 +1,5 @@
-import { motion } from "framer-motion";
-import { Activity, CheckCircle, Clock, Heart, MapPin, Phone, CheckSquare } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Activity, CheckCircle, Clock, Heart, MapPin, Phone, CheckSquare, X, Info } from "lucide-react";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { fetchAgentHistory, contactPatient, acceptAllocation } from "../lib/api";
@@ -22,10 +22,15 @@ type Patient = {
   // Scoring components
   urgency_score?: number;
   survival_score?: number;
+  ai_compatibility_score?: number;
   immuno_score?: number;
   distance_score?: number;
   readiness_score?: number;
   risk_adjustment?: number;
+  // AI fields
+  ai_reasoning?: string;
+  ai_survival_6hr?: number;
+  heuristic_survival_6hr?: number;
   // Additional fields
   distance_to_donor_km?: number;
   icu_bed_available?: boolean;
@@ -62,6 +67,7 @@ function AgentLog() {
   const [autoUpdating, setAutoUpdating] = useState(false);
   const [contactingPatient, setContactingPatient] = useState<string | null>(null);
   const [acceptingPatient, setAcceptingPatient] = useState<string | null>(null);
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const { token, openLogin } = useAuth();
   const pollerRef = useRef<number | null>(null);
 
@@ -259,6 +265,7 @@ function AgentLog() {
                       isAllocated={!!entry.accepted_patient}
                       onContact={handleContactPatient}
                       onAccept={handleAcceptAllocation}
+                      onViewDetails={() => setSelectedPatient(patient)}
                       isContacting={contactingPatient === (patient.patient_id || patient.id)}
                       isAccepting={acceptingPatient === (patient.patient_id || patient.id)}
                     />
@@ -273,7 +280,260 @@ function AgentLog() {
           </motion.div>
         ))}
       </div>
+
+      {/* Patient Details Modal */}
+      <AnimatePresence>
+        {selectedPatient && (
+          <PatientDetailsModal patient={selectedPatient} onClose={() => setSelectedPatient(null)} />
+        )}
+      </AnimatePresence>
     </div>
+  );
+}
+
+function PatientDetailsModal({ patient, onClose }: { patient: Patient; onClose: () => void }) {
+  const survival = Math.round((patient.survival_6hr_prob ?? 0) * 100);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.9, opacity: 0 }}
+        className="relative max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl border border-slate-700 bg-slate-900 p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Close Button */}
+        <button
+          onClick={onClose}
+          className="absolute right-4 top-4 rounded-full bg-slate-800 p-2 text-slate-400 transition hover:bg-slate-700 hover:text-white"
+        >
+          <X className="h-5 w-5" />
+        </button>
+
+        {/* Header */}
+        <div className="mb-6 border-b border-slate-800 pb-4">
+          <h2 className="text-2xl font-bold text-slate-100">{patient.name || "Unknown Patient"}</h2>
+          <p className="mt-1 text-sm text-slate-400">
+            {patient.blood_type || "?"} • {patient.age || "?"} years • Patient ID: {patient.patient_id || patient.id}
+          </p>
+        </div>
+
+        {/* Survival & Score */}
+        <div className="mb-6 grid grid-cols-2 gap-4">
+          <div className="rounded-2xl border border-slate-800 bg-slate-800/40 p-4 text-center">
+            <p className="text-xs uppercase tracking-wide text-slate-500">6-Hour Survival</p>
+            <p className={`text-3xl font-bold ${survival < 60 ? "text-medical-red" : "text-medical-green"}`}>
+              {survival}%
+            </p>
+          </div>
+          <div className="rounded-2xl border border-slate-800 bg-slate-800/40 p-4 text-center">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Allocation Score</p>
+            <p className="text-3xl font-bold text-medical-blue">
+              {patient.allocation_score ? (patient.allocation_score * 100).toFixed(1) : "—"}
+            </p>
+          </div>
+        </div>
+
+        {/* Clinical Details */}
+        <div className="mb-6 space-y-3">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Clinical Details</h3>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="flex items-center gap-2">
+              <Activity className="h-4 w-4 text-medical-blue" />
+              <span className="text-slate-400">MELD:</span>
+              <span className="font-semibold text-slate-200">{patient.meld ?? "—"}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-slate-500" />
+              <span className="text-slate-400">Waitlist:</span>
+              <span className="font-semibold text-slate-200">{patient.waitlist_days ?? "—"} days</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Heart className="h-4 w-4 text-medical-red" />
+              <span className="text-slate-400">HLA Match:</span>
+              <span className="font-semibold text-slate-200">{patient.hla_match ?? "—"}%</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <MapPin className="h-4 w-4 text-slate-500" />
+              <span className="text-slate-400">Distance:</span>
+              <span className="font-semibold text-slate-200">
+                {patient.distance_to_donor_km ? `${Math.round(patient.distance_to_donor_km)}km` : "—"}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Hospital Readiness */}
+        {(patient.hospital || patient.or_available !== undefined || patient.icu_bed_available !== undefined) && (
+          <div className="mb-6 space-y-3">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Hospital Readiness</h3>
+            <div className="flex flex-wrap gap-2">
+              {patient.hospital && (
+                <span className="rounded-full bg-slate-800 px-3 py-1 text-sm text-slate-300">{patient.hospital}</span>
+              )}
+              {patient.or_available !== undefined && (
+                <span
+                  className={`rounded-full px-3 py-1 text-sm ${
+                    patient.or_available ? "bg-medical-green/20 text-medical-green" : "bg-slate-700 text-slate-400"
+                  }`}
+                >
+                  OR {patient.or_available ? "✓" : "✗"}
+                </span>
+              )}
+              {patient.icu_bed_available !== undefined && (
+                <span
+                  className={`rounded-full px-3 py-1 text-sm ${
+                    patient.icu_bed_available ? "bg-medical-green/20 text-medical-green" : "bg-slate-700 text-slate-400"
+                  }`}
+                >
+                  ICU {patient.icu_bed_available ? "✓" : "✗"}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Risk Factors */}
+        {(!!patient.hepatocellular_carcinoma ||
+          !!patient.diabetes ||
+          !!patient.renal_failure ||
+          !!patient.ventilator_dependent) && (
+          <div className="mb-6 space-y-3">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Risk Factors</h3>
+            <div className="flex flex-wrap gap-2">
+              {patient.hepatocellular_carcinoma && (
+                <span className="rounded-full bg-medical-red/20 px-3 py-1 text-sm text-medical-red">
+                  Hepatocellular Carcinoma
+                </span>
+              )}
+              {patient.diabetes && (
+                <span className="rounded-full bg-orange-500/20 px-3 py-1 text-sm text-orange-400">Diabetes</span>
+              )}
+              {patient.renal_failure && (
+                <span className="rounded-full bg-orange-500/20 px-3 py-1 text-sm text-orange-400">Renal Failure</span>
+              )}
+              {patient.ventilator_dependent && (
+                <span className="rounded-full bg-medical-red/20 px-3 py-1 text-sm text-medical-red">
+                  Ventilator Dependent
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Score Breakdown */}
+        {patient.allocation_score !== undefined && (
+          <div className="mb-6 space-y-3">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Score Breakdown</h3>
+            <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-800/40 p-4">
+              {patient.urgency_score !== undefined && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-400">Urgency (25%)</span>
+                  <span className="font-mono font-semibold text-slate-200">
+                    {(patient.urgency_score * 100).toFixed(1)}
+                  </span>
+                </div>
+              )}
+              {patient.survival_score !== undefined && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-400">Survival (20%)</span>
+                  <span className="font-mono font-semibold text-slate-200">
+                    {(patient.survival_score * 100).toFixed(1)}
+                  </span>
+                </div>
+              )}
+              {patient.ai_compatibility_score !== undefined && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-medical-blue">🤖 AI Compatibility (20%)</span>
+                  <span className="font-mono font-semibold text-medical-blue">
+                    {(patient.ai_compatibility_score * 100).toFixed(1)}
+                  </span>
+                </div>
+              )}
+              {patient.immuno_score !== undefined && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-400">Immunological (12%)</span>
+                  <span className="font-mono font-semibold text-slate-200">
+                    {(patient.immuno_score * 100).toFixed(1)}
+                  </span>
+                </div>
+              )}
+              {patient.distance_score !== undefined && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-400">Distance (10%)</span>
+                  <span className="font-mono font-semibold text-slate-200">
+                    {(patient.distance_score * 100).toFixed(1)}
+                  </span>
+                </div>
+              )}
+              {patient.readiness_score !== undefined && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-400">Readiness (8%)</span>
+                  <span className="font-mono font-semibold text-slate-200">
+                    {(patient.readiness_score * 100).toFixed(1)}
+                  </span>
+                </div>
+              )}
+              {patient.risk_adjustment !== undefined && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-400">Risk Adjustment (5%)</span>
+                  <span className="font-mono font-semibold text-slate-200">
+                    {(patient.risk_adjustment * 100).toFixed(1)}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* AI Analysis */}
+        {patient.ai_reasoning && (
+          <div className="space-y-3">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+              🤖 AI Clinical Analysis & Prognosis
+            </h3>
+            <div className="rounded-2xl border border-medical-blue/30 bg-medical-blue/10 p-4 text-sm leading-relaxed text-slate-300">
+              {(() => {
+                const reasoning = patient.ai_reasoning || '';
+                return reasoning.split(/(?:IMMEDIATE:|SHORT-TERM:|LONG-TERM:|RECOMMENDATION:)/i).map((section, idx) => {
+                  const trimmed = section.trim();
+                  if (!trimmed) return null;
+                  
+                  let sectionType = '';
+                  if (reasoning.includes(`IMMEDIATE: ${trimmed}`) || reasoning.includes(`IMMEDIATE:${trimmed}`)) {
+                    sectionType = 'IMMEDIATE';
+                  } else if (reasoning.includes(`SHORT-TERM: ${trimmed}`) || reasoning.includes(`SHORT-TERM:${trimmed}`)) {
+                    sectionType = 'SHORT-TERM';
+                  } else if (reasoning.includes(`LONG-TERM: ${trimmed}`) || reasoning.includes(`LONG-TERM:${trimmed}`)) {
+                    sectionType = 'LONG-TERM';
+                  } else if (reasoning.includes(`RECOMMENDATION: ${trimmed}`) || reasoning.includes(`RECOMMENDATION:${trimmed}`)) {
+                    sectionType = 'RECOMMENDATION';
+                  }
+                  
+                  return (
+                    <div key={idx} className="mb-3 last:mb-0">
+                      {sectionType && (
+                        <span className="font-semibold text-medical-blue uppercase tracking-wide text-xs">
+                          {sectionType}:{' '}
+                        </span>
+                      )}
+                      <span>{trimmed}</span>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          </div>
+        )}
+      </motion.div>
+    </motion.div>
   );
 }
 
@@ -286,6 +546,7 @@ function PatientCard({
   isAllocated,
   onContact,
   onAccept,
+  onViewDetails,
   isContacting,
   isAccepting,
 }: {
@@ -297,6 +558,7 @@ function PatientCard({
   isAllocated?: boolean;
   onContact?: (patientId: string, donorQrCode: string, patientName: string) => void;
   onAccept?: (patientId: string, donorQrCode: string, allocationId: string, patientName: string) => void;
+  onViewDetails?: () => void;
   isContacting?: boolean;
   isAccepting?: boolean;
 }) {
@@ -386,11 +648,22 @@ function PatientCard({
         )}
       </div>
 
+      {/* AI Analysis Button */}
+      {patient.ai_reasoning && onViewDetails && (
+        <button
+          onClick={onViewDetails}
+          className="mt-3 w-full rounded-lg border border-medical-blue/30 bg-medical-blue/10 p-2 text-xs font-semibold text-medical-blue transition hover:bg-medical-blue/20 hover:border-medical-blue/50 flex items-center justify-center gap-2"
+        >
+          <Info className="h-3.5 w-3.5" />
+          View AI Analysis & Details
+        </button>
+      )}
+
       {/* Risk Factors */}
-      {(patient.hepatocellular_carcinoma ||
-        patient.diabetes ||
-        patient.renal_failure ||
-        patient.ventilator_dependent) && (
+      {(!!patient.hepatocellular_carcinoma ||
+        !!patient.diabetes ||
+        !!patient.renal_failure ||
+        !!patient.ventilator_dependent) && (
         <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
           {patient.hepatocellular_carcinoma && (
             <span className="rounded-full bg-medical-red/20 px-2 py-0.5 text-medical-red">HCC</span>
@@ -405,59 +678,11 @@ function PatientCard({
         </div>
       )}
 
-      {/* Allocation Score with Breakdown */}
+      {/* Allocation Score */}
       {patient.allocation_score !== undefined && (
-        <div className="mt-3 space-y-2 rounded-lg bg-slate-800/60 p-3">
-          <div className="text-center">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Total Score</p>
-            <p className="text-lg font-bold text-medical-blue">{(patient.allocation_score * 100).toFixed(1)}</p>
-          </div>
-
-          {/* Score Components */}
-          {(patient.urgency_score !== undefined ||
-            patient.survival_score !== undefined ||
-            patient.immuno_score !== undefined ||
-            patient.distance_score !== undefined ||
-            patient.readiness_score !== undefined) && (
-            <div className="space-y-1 border-t border-slate-700 pt-2 text-[10px]">
-              {patient.urgency_score !== undefined && (
-                <div className="flex justify-between text-slate-400">
-                  <span>Urgency (35%)</span>
-                  <span className="font-mono text-slate-300">{(patient.urgency_score * 100).toFixed(1)}</span>
-                </div>
-              )}
-              {patient.survival_score !== undefined && (
-                <div className="flex justify-between text-slate-400">
-                  <span>Survival (25%)</span>
-                  <span className="font-mono text-slate-300">{(patient.survival_score * 100).toFixed(1)}</span>
-                </div>
-              )}
-              {patient.immuno_score !== undefined && (
-                <div className="flex justify-between text-slate-400">
-                  <span>Immuno (12%)</span>
-                  <span className="font-mono text-slate-300">{(patient.immuno_score * 100).toFixed(1)}</span>
-                </div>
-              )}
-              {patient.distance_score !== undefined && (
-                <div className="flex justify-between text-slate-400">
-                  <span>Distance (10%)</span>
-                  <span className="font-mono text-slate-300">{(patient.distance_score * 100).toFixed(1)}</span>
-                </div>
-              )}
-              {patient.readiness_score !== undefined && (
-                <div className="flex justify-between text-slate-400">
-                  <span>Readiness (10%)</span>
-                  <span className="font-mono text-slate-300">{(patient.readiness_score * 100).toFixed(1)}</span>
-                </div>
-              )}
-              {patient.risk_adjustment !== undefined && (
-                <div className="flex justify-between text-slate-400">
-                  <span>Risk Adj (8%)</span>
-                  <span className="font-mono text-slate-300">{(patient.risk_adjustment * 100).toFixed(1)}</span>
-                </div>
-              )}
-            </div>
-          )}
+        <div className="mt-3 rounded-lg bg-slate-800/60 px-3 py-2 text-center">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Allocation Score</p>
+          <p className="text-lg font-bold text-medical-blue">{(patient.allocation_score * 100).toFixed(1)}</p>
         </div>
       )}
 

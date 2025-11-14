@@ -14,6 +14,7 @@ from langfuse import Langfuse
 from loguru import logger
 
 from ..ai.survival_model import MODEL_FEATURES, predict_survival
+from ..ai.openai_matcher import openai_matcher
 from ..database import settings
 from ..memory.allocation_memory import allocation_memory
 from ..tools.fhir_patient_tool import fetch_fhir_patients
@@ -212,7 +213,10 @@ class OrganAllocationAgent:
         }
 
     async def _predict_survival(self, state: AllocationState) -> AllocationState:
+        donor = state["donor"]
         patients = state["patients"]
+        
+        # Step 1: Heuristic model predictions (fast, deterministic)
         feature_matrix: List[List[float]] = []
         for patient in patients:
             row = []
@@ -223,23 +227,54 @@ class OrganAllocationAgent:
                     patient[feature] = value
                 row.append(float(value))
             feature_matrix.append(row)
+        
         if feature_matrix:
-            predictions = await predict_survival(feature_matrix)
+            heuristic_probs = await predict_survival(feature_matrix)
         else:
-            predictions = []
-        for patient, prob in zip(patients, predictions):
-            patient["survival_6hr_prob"] = prob
-        if not predictions:
+            heuristic_probs = []
+        
+        for patient, prob in zip(patients, heuristic_probs):
+            patient["heuristic_survival_6hr"] = prob
+        
+        if not heuristic_probs:
             for patient in patients:
-                patient["survival_6hr_prob"] = patient.get("survival_hint", 0.5)
-        reasoning = state["reasoning"] + ["Calculated 6-hour survival probabilities for candidates."]
+                patient["heuristic_survival_6hr"] = patient.get("survival_hint", 0.5)
+        
+        logger.info("Heuristic model predictions complete")
+        
+        # Step 2: OpenAI predictions (intelligent, context-aware)
+        try:
+            patients = await openai_matcher.predict_survival_batch(donor, patients)
+            logger.info("OpenAI predictions complete")
+            
+            # Step 3: Combine both predictions for final survival score
+            for patient in patients:
+                heuristic = patient.get("heuristic_survival_6hr", 0.5)
+                ai_survival = patient.get("survival_6hr_prob", heuristic)  # OpenAI sets this
+                
+                # Weighted average: 60% AI, 40% heuristic
+                # AI gets more weight as it considers context better
+                combined_survival = 0.6 * ai_survival + 0.4 * heuristic
+                
+                patient["survival_6hr_prob"] = combined_survival
+                patient["ai_survival_6hr"] = ai_survival
+                
+                logger.debug(
+                    f"{patient.get('name')}: Heuristic={heuristic:.2f}, AI={ai_survival:.2f}, Combined={combined_survival:.2f}"
+                )
+        except Exception as exc:
+            logger.warning(f"OpenAI prediction failed: {exc}. Using heuristic only.")
+            for patient in patients:
+                patient["survival_6hr_prob"] = patient.get("heuristic_survival_6hr", 0.5)
+        
+        reasoning = state["reasoning"] + ["Calculated survival probabilities using hybrid AI + heuristic model."]
         timeline = state["timeline"] + [
             {"event": "predict_survival", "timestamp": datetime.utcnow().isoformat()},
         ]
         await self.event_sink(
             AgentEvent(
                 "agent_reasoning",
-                {"message": "Survival predictions complete. Preparing ranking."},
+                {"message": "Hybrid survival predictions complete. Preparing ranking."},
             )
         )
         return {
@@ -280,20 +315,26 @@ class OrganAllocationAgent:
             antibody_level = patient.get("hla_antibody_level", 0) / 100
             immuno_score = (hla + (1 - antibody_level)) / 2
             
-            # Weighted allocation score
+            # AI compatibility score (if available from OpenAI)
+            ai_compatibility = patient.get("ai_compatibility_score", 0.5)
+            
+            # Hybrid allocation score
+            # Combines rule-based factors with AI holistic assessment
             score = (
-                0.35 * urgency +           # Medical urgency (MELD)
-                0.25 * survival +          # Survival probability
+                0.25 * urgency +           # Medical urgency (MELD)
+                0.20 * survival +          # Hybrid survival (AI + heuristic)
+                0.20 * ai_compatibility +  # AI holistic compatibility (NEW!)
                 0.12 * immuno_score +      # Immunological compatibility
                 0.10 * distance +          # Geographic proximity
-                0.10 * readiness +         # Hospital readiness
-                0.08 * (1 - risk_penalty)  # Clinical risk adjustment
+                0.08 * readiness +         # Hospital readiness
+                0.05 * (1 - risk_penalty)  # Clinical risk adjustment
             )
             
             # Store component scores for transparency
             patient["allocation_score"] = score
             patient["urgency_score"] = urgency
             patient["survival_score"] = survival
+            patient["ai_compatibility_score"] = ai_compatibility
             patient["immuno_score"] = immuno_score
             patient["distance_score"] = distance
             patient["readiness_score"] = readiness
@@ -306,17 +347,20 @@ class OrganAllocationAgent:
         
         if ranked:
             top = ranked[0]
+            ai_reason = top.get("ai_reasoning", "")
             highlight = (
                 f"Top candidate {top['name']} (MELD {top.get('meld', '?')}) "
                 f"with survival {top['survival_6hr_prob']:.0%}, "
-                f"distance {top.get('distance_to_donor_km', '?')}km, "
+                f"AI compatibility {top.get('ai_compatibility_score', 0):.0%}, "
                 f"score {top['allocation_score']:.3f}"
             )
+            if ai_reason:
+                highlight += f" - AI: {ai_reason}"
         else:
             highlight = "No candidates available"
         
         reasoning = state["reasoning"] + [
-            f"Ranked {len(ranked)} patients using multi-factor scoring. {highlight}.",
+            f"Ranked {len(ranked)} patients using hybrid AI + rule-based scoring. {highlight}.",
         ]
         timeline = state["timeline"] + [
             {"event": "rank_patients", "timestamp": datetime.utcnow().isoformat()},
