@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import motor.motor_asyncio
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings
@@ -23,7 +25,7 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
 
     class Config:
-        env_file = "backend/.env"
+        env_file = Path(__file__).resolve().parent.parent / ".env"
         env_prefix = ""
         case_sensitive = False
 

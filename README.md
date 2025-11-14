@@ -148,6 +148,21 @@ Swagger: [http://localhost:8000/docs](http://localhost:8000/docs)
 
 ---
 
+## ☁️ Deploying to Render
+
+1. **Connect the repo**: Push LiverLink to GitHub/GitLab and create a new *Blueprint Instance* in Render pointing to the root. The checked-in `render.yaml` provisions both the FastAPI backend and the Vite frontend from the same repo.
+2. **Fill env vars**: When Render asks for secrets, supply the values declared in `render.yaml` (`MONGODB_URL`, `JWT_SECRET`, `TWILIO_*`, `LANGFUSE_*`, `OPENAI_API_KEY`, etc.). Render keeps them encrypted and injects them at build/start time.
+3. **Build & start scripts**: The blueprint delegates to helpers under `scripts/`:
+   - `scripts/render-backend-build.sh` installs Python dependencies.
+   - `scripts/render-backend-start.sh` runs `uvicorn app.main:socket_app --host 0.0.0.0 --port $PORT`.
+   - `scripts/render-frontend-build.sh` installs npm deps and builds the Vite bundle.
+4. **Wire the frontend URL**: `VITE_API_BASE_URL` defaults to `https://liverlink-backend.onrender.com`. Update it if Render assigns a different backend hostname.
+5. **Smoke test**: After deploy, hit `https://<backend-host>/health`, then open the static site URL and walk through login → donor scan to confirm sockets work over HTTPS/WSS.
+
+Prefer manual services instead of a blueprint? Create a Render “Web Service” for the backend using the same scripts, then host `frontend/dist` on any Render “Static Site”.
+
+---
+
 ## 🩺 Frontend Experience
 - **Donor Scan:** html5-qrcode camera, auto-populated donor form, CTA to start allocation.
 - **Surgeon Dashboard:** Animated agent card, survival cards, alert feed, confetti on acceptance.

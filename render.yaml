@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: liverlink-backend
+    env: python
+    plan: starter
+    buildCommand: bash ./scripts/render-backend-build.sh
+    startCommand: bash ./scripts/render-backend-start.sh
+    autoDeploy: true
+    envVars:
+      - key: MONGODB_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: LANGFUSE_PUBLIC_KEY
+        sync: false
+      - key: LANGFUSE_SECRET_KEY
+        sync: false
+      - key: LANGFUSE_HOST
+        value: https://cloud.langfuse.com
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: TWILIO_SID
+        sync: false
+      - key: TWILIO_TOKEN
+        sync: false
+      - key: TWILIO_PHONE
+        sync: false
+
+  - type: static_site
+    name: liverlink-frontend
+    buildCommand: bash ./scripts/render-frontend-build.sh
+    publishPath: frontend/dist
+    autoDeploy: true
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://liverlink-backend.onrender.com
+
