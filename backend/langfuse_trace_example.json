@@ -1,0 +1,50 @@
+{
+  "trace_id": "trace_1234567890",
+  "name": "liverlink_allocation",
+  "timestamp": "2025-11-14T10:00:00Z",
+  "input": {
+    "qr_code_id": "QR-001",
+    "organ": "liver"
+  },
+  "steps": [
+    {
+      "name": "fetch_patients",
+      "duration_ms": 120,
+      "output": "Fetched 100 candidates"
+    },
+    {
+      "name": "predict",
+      "duration_ms": 340,
+      "output": "Predicted survival probabilities"
+    },
+    {
+      "name": "rank",
+      "duration_ms": 180,
+      "output": "Ranked patients by urgency and survival"
+    },
+    {
+      "name": "alert",
+      "duration_ms": 90,
+      "output": "Alert sent to surgeon"
+    },
+    {
+      "name": "evaluate",
+      "duration_ms": 65,
+      "output": "Allocation locked"
+    }
+  ],
+  "output": {
+    "accepted_patient": {
+      "id": "P12",
+      "name": "Emily Chen",
+      "survival_6hr_prob": 0.82
+    },
+    "timeline": [
+      "fetch_patients",
+      "predict_survival",
+      "rank_patients",
+      "alert_surgeon",
+      "evaluation"
+    ]
+  }
+}
