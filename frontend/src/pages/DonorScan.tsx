@@ -406,7 +406,7 @@ function DonorScan() {
             whileTap={{ scale: 0.98 }}
             disabled={loading}
           >
-            {loading ? "Allocating..." : "Register & Allocate"}
+            {loading ? "Allocating..." : "Register Organ"}
           </motion.button>
           <p className="text-xs text-slate-500">{status}</p>
         </form>

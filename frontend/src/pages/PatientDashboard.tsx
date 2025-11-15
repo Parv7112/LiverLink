@@ -81,10 +81,31 @@ export default function PatientDashboard() {
     load();
   }, [logout, openLogin]);
 
+  useEffect(() => {
+    if (!showModal) {
+      document.body.style.removeProperty("overflow");
+      document.documentElement.style.removeProperty("overflow");
+      return;
+    }
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+    };
+  }, [showModal]);
+
   const buildFormState = (data: PatientProfile): Record<EditableField, string> => {
     const entries: [EditableField, string][] = fieldConfig.map((field) => {
       const raw = data[field.name];
       if (!data.profile_verified) {
+        if (field.name === "name" && typeof raw === "string") {
+          return [field.name, raw];
+        }
         if (typeof raw === "boolean") {
           return [field.name, raw ? "true" : "false"];
         }
@@ -223,14 +244,14 @@ export default function PatientDashboard() {
       </section>
 
       {showModal && formState && (
-        <div className="fixed inset-x-0 bottom-0 z-40 flex items-start justify-center bg-slate-950/90 px-4 pb-10 pt-8 md:pb-14 md:pt-10 backdrop-blur top-[40px] md:top-[60px]">
+        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-hidden bg-slate-950/90 px-4 pb-10 pt-8 md:pb-14 md:pt-10 backdrop-blur">
           <motion.form
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             onSubmit={handleSubmit}
-            className="max-h-[85vh] w-full max-w-4xl space-y-6 overflow-y-auto rounded-[32px] border border-slate-800 bg-slate-950/90 p-10 pb-12 text-slate-100 shadow-[0_35px_150px_rgba(2,6,23,0.85)]"
+            className="mt-6 max-h-[85vh] w-full max-w-4xl space-y-6 overflow-y-auto rounded-[32px] border border-slate-800 bg-slate-950/90 p-10 pb-12 text-slate-100 shadow-[0_35px_150px_rgba(2,6,23,0.85)]"
           >
-            <header className="sticky top-0 z-10 space-y-2 rounded-2xl bg-slate-950/95 p-1 pb-4 backdrop-blur">
+            <header className="space-y-2 rounded-2xl bg-slate-950/95 p-1 pb-4">
               <p className="text-xs font-semibold uppercase tracking-[0.4em] text-slate-500">Profile verification</p>
               <h2 className="text-3xl font-bold text-white">Confirm your clinical details</h2>
               <p className="text-sm text-slate-400">Review and update your information. This form must be submitted to continue.</p>
