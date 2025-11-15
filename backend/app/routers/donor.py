@@ -15,7 +15,7 @@ from ..database import db
 from ..models.donor import Donor, DonorCreate
 from ..models.user import UserPublic
 from ..routers.auth import get_current_user, require_roles
-from ..utils.notifications import notification_service, SmsNotification
+from ..utils.notifications import notification_service, SmsNotification, normalize_phone_number
 from ..memory.allocation_memory import allocation_memory
 
 router = APIRouter(prefix="/donors", tags=["donors"])
@@ -85,7 +85,7 @@ class ContactPatientRequest(BaseModel):
     patient_id: str
     donor_qr_code_id: str
     message: str
-    phone_number: str | None = None  # Optional: override patient's surgeon_phone
+    phone_number: str | None = None  # Optional: manual override (database values take priority)
 
 
 class AcceptAllocationRequest(BaseModel):
@@ -124,12 +124,33 @@ async def contact_patient(
     if not patient_data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found in allocation")
     
-    # Get phone number: use provided phone_number, fallback to surgeon_phone from patient data, or default
-    phone_number = payload.phone_number or patient_data.get("surgeon_phone") or patient_data.get("phone_number") or "+15551234567"
+    # Get phone number priority:
+    # 1. Patient's phone_number (direct patient contact - PRIMARY)
+    # 2. Patient's surgeon_phone (surgeon contact - fallback)
+    # 3. Payload phone_number override (manual override)
+    # 4. Default fallback
+    phone_source = "default"
+    if patient_data.get("phone_number"):
+        phone_number = patient_data.get("phone_number")
+        phone_source = "phone_number (database)"
+    elif patient_data.get("surgeon_phone"):
+        phone_number = patient_data.get("surgeon_phone")
+        phone_source = "surgeon_phone (database)"
+    elif payload.phone_number:
+        phone_number = payload.phone_number
+        phone_source = "payload (manual override)"
+    else:
+        phone_number = "+15551234567"
+        phone_source = "default fallback"
+    
+    # Normalize phone number to E.164 format for Twilio
+    normalized_phone = normalize_phone_number(phone_number)
+    
+    logger.info(f"Contact patient {payload.patient_id}: using {phone_source} -> {phone_number} (normalized: {normalized_phone})")
     
     # Send SMS
     sms = SmsNotification(
-        to=phone_number,
+        to=phone_number,  # Will be normalized in send_sms
         body=payload.message or f"Organ available for {patient_data.get('name')}. Reply ACCEPT to proceed."
     )
     
@@ -146,17 +167,21 @@ async def contact_patient(
             "status": "sent",
             "patient_id": payload.patient_id,
             "phone_number": phone_number,
+            "phone_number_normalized": normalized_phone,
+            "phone_source": phone_source,
             "allocation_id": allocation_id,
             "message": status_msg,
             "twilio_configured": notification_service.client is not None
         }
     except Exception as exc:
         # SMS failed but we don't want to block the allocation
-        logger.error(f"SMS send failed for {phone_number}: {exc}")
+        logger.error(f"SMS send failed for {phone_number} (normalized: {normalized_phone}): {exc}")
         return {
             "status": "failed",
             "patient_id": payload.patient_id,
             "phone_number": phone_number,
+            "phone_number_normalized": normalized_phone,
+            "phone_source": phone_source,
             "allocation_id": allocation_id,
             "message": f"SMS delivery failed: {str(exc)}",
             "twilio_configured": notification_service.client is not None,
