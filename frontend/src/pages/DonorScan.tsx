@@ -186,25 +186,19 @@ function DonorScan() {
   }, [token]);
 
   const onScan = useCallback((value: string) => {
-    console.log("[DonorScan] QR scanned, raw value:", value);
-    alert(`QR Detected: ${value.substring(0, 50)}...`); // Visual feedback
     
     const parsed = parseDonorPayload(value);
-    console.log("[DonorScan] Parsed result:", parsed);
     
     if (parsed.donor) {
-        console.log("[DonorScan] Setting donor data:", parsed.donor);
         setDonorData((prev) => ({
           ...prev,
           ...parsed.donor,
         }));
     }
     if (parsed.qrCodeId) {
-      console.log("[DonorScan] Setting QR code:", parsed.qrCodeId);
       setQrCode(parsed.qrCodeId);
       setStatus("QR detected and donor profile pre-filled.");
     } else {
-      console.warn("[DonorScan] No QR code ID found, using raw value");
       setQrCode(value);
       setStatus("QR captured but we could not read metadata. Please verify fields manually.");
     }
