@@ -4,7 +4,7 @@ import {
   Html5QrcodeSupportedFormats,
 } from "html5-qrcode";
 import jsQR from "jsqr";
-import { QrCode } from "lucide-react";
+import { QrCode, Upload, X } from "lucide-react";
 import { ChangeEvent, useEffect, useRef, useState } from "react";
 
 const DEFAULT_QR = "liverlink-qr";
@@ -23,6 +23,8 @@ export function QRScanner({ onScan, active = true }: Props) {
   const [manualProcessing, setManualProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [cameraStatus, setCameraStatus] = useState<string>("Initializing camera…");
+  const [uploadMode, setUploadMode] = useState(false);
+  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
 
   const safeStop = async (engine: Html5Qrcode | null) => {
     if (!engine) return;
@@ -106,8 +108,8 @@ export function QRScanner({ onScan, active = true }: Props) {
     let cancelled = false;
 
     const startCamera = async () => {
-      if (!active) {
-        setCameraStatus("Camera paused.");
+      if (!active || uploadMode) {
+        setCameraStatus(uploadMode ? "Upload mode active." : "Camera paused.");
         await safeStop(scanner.current);
         await safeClear(scanner.current);
         scanner.current = null;
@@ -208,7 +210,7 @@ export function QRScanner({ onScan, active = true }: Props) {
       safeClear(scanner.current);
       scanner.current = null;
     };
-  }, [active, onScan]);
+  }, [active, onScan, uploadMode]);
 
   const decodeWithJsQr = async (file: File): Promise<string> => {
     const dataUrl = await new Promise<string>((resolve, reject) => {
@@ -251,47 +253,134 @@ export function QRScanner({ onScan, active = true }: Props) {
     }
     setManualProcessing(true);
     setManualDecodeError(null);
+    
+    // Read file and create preview
+    const reader = new FileReader();
+    reader.onload = () => {
+      setUploadedImage(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+    
     try {
       const decoded = await decodeWithJsQr(file);
       onScan(decoded);
       setError(null);
     } catch (uploadError: any) {
       setManualDecodeError(uploadError?.message ?? "Unable to decode QR image.");
+      setUploadedImage(null);
     } finally {
       setManualProcessing(false);
     }
   };
 
+  const handleSwitchToUpload = () => {
+    setUploadMode(true);
+    setUploadedImage(null);
+    setManualDecodeError(null);
+  };
+
+  const handleSwitchToCamera = () => {
+    setUploadMode(false);
+    setUploadedImage(null);
+    setManualDecodeError(null);
+  };
+
+  const handleRemoveImage = () => {
+    setUploadedImage(null);
+    setManualDecodeError(null);
+  };
+
   return (
     <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6 text-center">
       <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-medical-blue/20 text-medical-blue">
-        <QrCode className="h-7 w-7" />
+        {uploadMode ? <Upload className="h-7 w-7" /> : <QrCode className="h-7 w-7" />}
       </div>
-      <p className="text-lg font-semibold text-slate-100">Scan donor QR</p>
-      <p className="text-xs text-slate-500">{cameraStatus}</p>
-      <div className="relative mt-4 w-full overflow-hidden rounded-2xl bg-black/40" style={{ height: 320 }}>
-        <div ref={hostRef} className="relative h-full w-full">
-          <div id={containerId.current} className="absolute inset-0 h-full w-full" />
+      <p className="text-lg font-semibold text-slate-100">
+        {uploadMode ? "Upload donor QR" : "Scan donor QR"}
+      </p>
+      <p className="text-xs text-slate-500">
+        {uploadMode ? "Upload an image of the QR code" : cameraStatus}
+      </p>
+
+      {/* Camera or Upload View */}
+      {!uploadMode ? (
+        // Camera Mode
+        <>
+          <div className="relative mt-4 w-full overflow-hidden rounded-2xl bg-black/40" style={{ height: 320 }}>
+            <div ref={hostRef} className="relative h-full w-full">
+              <div id={containerId.current} className="absolute inset-0 h-full w-full" />
+            </div>
+          </div>
+          {error && <p className="mt-2 text-xs text-medical-red">{error}</p>}
+        </>
+      ) : (
+        // Upload Mode
+        <div className="relative mt-4 w-full overflow-hidden rounded-2xl bg-black/40" style={{ height: 320 }}>
+          {!uploadedImage ? (
+            // Empty upload box with + button
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex h-full w-full flex-col items-center justify-center gap-3 border-2 border-dashed border-slate-700 rounded-2xl bg-slate-900/40 transition hover:border-medical-blue/50 hover:bg-slate-900/60"
+            >
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-medical-blue/20 text-medical-blue">
+                <Upload className="h-8 w-8" />
+              </div>
+              <p className="text-sm font-semibold text-slate-300">Click to upload QR image</p>
+              <p className="text-xs text-slate-500">PNG, JPG, JPEG up to 10MB</p>
+            </button>
+          ) : (
+            // Display uploaded image
+            <div className="relative h-full w-full">
+              <img
+                src={uploadedImage}
+                alt="Uploaded QR code"
+                className="h-full w-full object-contain rounded-2xl"
+              />
+              <button
+                type="button"
+                onClick={handleRemoveImage}
+                className="absolute top-2 right-2 flex h-8 w-8 items-center justify-center rounded-full bg-medical-red/80 text-white transition hover:bg-medical-red"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+          )}
         </div>
-      </div>
-      {error && <p className="mt-2 text-xs text-medical-red">{error}</p>}
+      )}
+
+      {/* Hidden file input */}
+      <input
+        type="file"
+        accept="image/*"
+        ref={fileInputRef}
+        className="hidden"
+        onChange={handleManualUpload}
+      />
+
+      {/* Processing and error messages */}
+      {manualProcessing && <p className="mt-2 text-xs text-slate-400">Decoding image...</p>}
+      {manualDecodeError && <p className="mt-2 text-xs text-medical-red">{manualDecodeError}</p>}
+
+      {/* Toggle between camera and upload */}
       <div className="mt-4 space-y-1">
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          className="text-xs font-semibold uppercase tracking-widest text-medical-blue underline-offset-2 hover:underline"
-        >
-          Upload QR image instead
-        </button>
-        <input
-          type="file"
-          accept="image/*"
-          ref={fileInputRef}
-          className="hidden"
-          onChange={handleManualUpload}
-        />
-        {manualProcessing && <p className="text-xs text-slate-400">Decoding image...</p>}
-        {manualDecodeError && <p className="text-xs text-medical-red">{manualDecodeError}</p>}
+        {!uploadMode ? (
+          <button
+            type="button"
+            onClick={handleSwitchToUpload}
+            className="text-xs font-semibold uppercase tracking-widest text-medical-blue underline-offset-2 hover:underline"
+          >
+            Upload QR image instead
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={handleSwitchToCamera}
+            className="text-xs font-semibold uppercase tracking-widest text-medical-blue underline-offset-2 hover:underline"
+          >
+            Use camera instead
+          </button>
+        )}
       </div>
     </div>
   );
