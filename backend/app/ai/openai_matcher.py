@@ -128,7 +128,7 @@ Respond with ONLY valid JSON array (no markdown, no extra text):
 Be realistic and evidence-based. Survival probabilities: 0.3-0.95. Consider both urgency and outcomes."""
 
             response = await self.client.chat.completions.create(
-                model="meta-llama/llama-3.1-8b-instruct:free",  # Fast, free, and accurate via OpenRouter
+                model="google/gemini-flash-1.5",  # Reliable and very cheap (~$0.075/1M tokens) via OpenRouter
                 messages=[
                     {
                         "role": "system",
