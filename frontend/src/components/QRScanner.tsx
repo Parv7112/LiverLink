@@ -51,9 +51,15 @@ export function QRScanner({ onScan, active = true }: Props) {
 
   const applyVideoStyles = () => {
     const host = hostRef.current;
-    if (!host) return;
+    if (!host) {
+      console.warn("[QRScanner] Host ref not available");
+      return;
+    }
     const video = host.querySelector("video") as HTMLVideoElement | null;
     const canvas = host.querySelector("canvas") as HTMLCanvasElement | null;
+    
+    console.log("[QRScanner] Applying styles - Video:", !!video, "Canvas:", !!canvas);
+    
     if (video) {
       video.style.position = "absolute";
       video.style.top = "0";
@@ -62,7 +68,18 @@ export function QRScanner({ onScan, active = true }: Props) {
       video.style.height = "100%";
       video.style.objectFit = "cover";
       video.style.borderRadius = "1.25rem";
+      video.style.zIndex = "1";
+      console.log("[QRScanner] Video element styled:", {
+        width: video.offsetWidth,
+        height: video.offsetHeight,
+        videoWidth: video.videoWidth,
+        videoHeight: video.videoHeight,
+        readyState: video.readyState
+      });
+    } else {
+      console.warn("[QRScanner] Video element not found in DOM");
     }
+    
     if (canvas) {
       canvas.style.position = "absolute";
       canvas.style.top = "0";
@@ -72,6 +89,7 @@ export function QRScanner({ onScan, active = true }: Props) {
       canvas.style.borderRadius = "1.25rem";
       canvas.style.opacity = "0";
       canvas.style.pointerEvents = "none";
+      canvas.style.zIndex = "2";
     }
   };
 
@@ -154,6 +172,11 @@ export function QRScanner({ onScan, active = true }: Props) {
         );
         console.log("[QRScanner] Camera started successfully");
         setCameraStatus("Camera active. Hold the QR steady.");
+        
+        // Apply styles after a short delay to ensure video element is in DOM
+        setTimeout(() => {
+          applyVideoStyles();
+        }, 500);
       } catch (cameraError: any) {
         if (!cancelled) {
           console.error("[QRScanner] Camera error:", cameraError);
@@ -246,9 +269,9 @@ export function QRScanner({ onScan, active = true }: Props) {
       </div>
       <p className="text-lg font-semibold text-slate-100">Scan donor QR</p>
       <p className="text-xs text-slate-500">{cameraStatus}</p>
-      <div className="relative mt-4 w-full overflow-hidden rounded-2xl bg-black/40" style={{ minHeight: 320 }}>
+      <div className="relative mt-4 w-full overflow-hidden rounded-2xl bg-black/40" style={{ height: 320 }}>
         <div ref={hostRef} className="relative h-full w-full">
-          <div id={containerId.current} className="absolute inset-0" />
+          <div id={containerId.current} className="absolute inset-0 h-full w-full" />
         </div>
       </div>
       {error && <p className="mt-2 text-xs text-medical-red">{error}</p>}
