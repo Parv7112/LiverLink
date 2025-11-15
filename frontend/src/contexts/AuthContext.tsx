@@ -5,8 +5,10 @@ export type UserProfile = {
   _id: string;
   email: string;
   name: string;
-  role: "coordinator" | "surgeon" | "admin";
+  role: "coordinator" | "surgeon" | "admin" | "patient";
   created_at: string;
+  patient_id?: string | null;
+  phone_number?: string | null;
 };
 
 type AuthModalMode = "login" | "register";

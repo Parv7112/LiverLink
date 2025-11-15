@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { Eye, EyeOff } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
+import { useNavigate } from "react-router-dom";
 import { registerAdmin } from "../lib/api";
 
 type Mode = "login" | "register";
@@ -17,6 +18,7 @@ const inputClasses = (errored?: boolean) =>
 
 export function AdminLoginModal() {
   const { loginModal, closeLogin, login, logout, authLoading, authError, pushMessage } = useAuth();
+  const navigate = useNavigate();
   const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -35,6 +37,7 @@ export function AdminLoginModal() {
       setEmail("");
       setPassword("");
       setRegisterPayload({ name: "", email: "", password: "", role: "surgeon" });
+        setRegisterPayload({ name: "", email: "", password: "", role: "surgeon" });
       setRegisterError(null);
       setLoginEmailTouched(false);
       setRegisterEmailTouched(false);
@@ -58,7 +61,14 @@ export function AdminLoginModal() {
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    await login(email, password, loginRole);
+    const user = await login(email, password, loginRole);
+    if (user.role === "patient") {
+      navigate("/patient-dashboard", { replace: true });
+    } else if (user.role === "coordinator") {
+      navigate("/dashboard", { replace: true });
+    } else if (user.role === "admin") {
+      navigate("/", { replace: true });
+    }
   };
 
   const handleRegister = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -121,17 +131,18 @@ export function AdminLoginModal() {
           <option value="coordinator">Coordinator</option>
           <option value="surgeon">Surgeon</option>
           <option value="admin">Admin</option>
+          <option value="patient">Patient</option>
         </select>
       </label>
       <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
         Password
         <div className="mt-2 flex items-center rounded-xl border border-slate-700 bg-slate-900/60 pr-2">
-          <input
+        <input
             type={showLoginPassword ? "text" : "password"}
-            required
+          required
             className="w-full rounded-xl bg-transparent p-3 text-sm text-slate-100 outline-none"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
             autoComplete="current-password"
             minLength={6}
           />
@@ -206,12 +217,12 @@ export function AdminLoginModal() {
       <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
         Password
         <div className="mt-2 flex items-center rounded-xl border border-slate-700 bg-slate-900/60 pr-2">
-          <input
+        <input
             type={showRegisterPassword ? "text" : "password"}
-            required
+          required
             className="w-full rounded-xl bg-transparent p-3 text-sm text-slate-100 outline-none"
-            value={registerPayload.password}
-            onChange={(event) => setRegisterPayload((prev) => ({ ...prev, password: event.target.value }))}
+          value={registerPayload.password}
+          onChange={(event) => setRegisterPayload((prev) => ({ ...prev, password: event.target.value }))}
             minLength={8}
             autoComplete="new-password"
           />
@@ -236,6 +247,7 @@ export function AdminLoginModal() {
           <option value="surgeon">Surgeon</option>
           <option value="coordinator">Coordinator</option>
           <option value="admin">Admin</option>
+          <option value="patient">Patient</option>
         </select>
       </label>
       {registerError && <p className="text-xs text-medical-red">{registerError}</p>}

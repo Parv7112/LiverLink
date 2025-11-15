@@ -32,6 +32,8 @@ async def register_user(payload: UserCreate, users: AsyncIOMotorCollection = Dep
             "name": payload.name,
             "password": hashed,
             "role": payload.role,
+            "phone_number": payload.phone_number,
+            "patient_id": str(ObjectId()) if payload.role == "patient" else None,
             "created_at": datetime.utcnow(),
         }
         result = await users.insert_one(doc)

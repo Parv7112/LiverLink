@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 class Patient(BaseModel):
     id: str = Field(alias="_id")
     name: str
+    phone_number: str | None = None
     blood_type: str
     hla_match: int
     meld: int
@@ -42,8 +43,29 @@ class Patient(BaseModel):
     # Contact
     surgeon_phone: str | None = None
     hospital: str | None = None
+    profile_verified: bool = False
 
 
 class PatientList(BaseModel):
     patients: List[Patient]
+
+
+class PatientProfileUpdate(BaseModel):
+    name: str
+    phone_number: str | None = None
+    blood_type: str
+    hla_match: int
+    meld: int
+    age: int
+    comorbidities: int
+    bilirubin: float
+    inr: float
+    creatinine: float
+    ascites_grade: int
+    encephalopathy_grade: int
+    hospitalized_last_7d: int
+    waitlist_days: int
+    eta_min: int
+    or_available: bool
+    survival_6hr_prob: float
 
