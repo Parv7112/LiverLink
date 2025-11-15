@@ -6,7 +6,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, EmailStr, Field
 
 
-UserRole = Literal["coordinator", "surgeon", "admin"]
+UserRole = Literal["coordinator", "surgeon", "admin", "patient"]
 
 
 class UserCreate(BaseModel):
@@ -14,6 +14,7 @@ class UserCreate(BaseModel):
     password: str = Field(min_length=8, max_length=128)
     name: str
     role: UserRole = Field(default="surgeon")
+    phone_number: str | None = None
 
 
 class UserLogin(BaseModel):
@@ -27,6 +28,8 @@ class UserPublic(BaseModel):
     name: str
     role: UserRole
     created_at: datetime
+    patient_id: str | None = None
+    phone_number: str | None = None
 
 
 class Token(BaseModel):

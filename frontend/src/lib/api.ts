@@ -22,8 +22,10 @@ const UserSchema = z.object({
   _id: z.string(),
   email: z.string().email(),
   name: z.string(),
-  role: z.enum(["coordinator", "surgeon", "admin"]),
+  role: z.enum(["coordinator", "surgeon", "admin", "patient"]),
   created_at: z.string(),
+  patient_id: z.string().nullable().optional(),
+  phone_number: z.string().nullable().optional(),
 });
 
 const AuthResponseSchema = z.object({
@@ -57,11 +59,46 @@ const RegisterSchema = z.object({
   password: z.string().min(6),
   name: z.string(),
   role: z.string().default("surgeon"),
+  phone_number: z.string().optional(),
 });
 
 export async function registerAdmin(payload: z.infer<typeof RegisterSchema>) {
   const response = await apiClient.post("/auth/register", payload);
   return response.data;
+}
+
+const PatientSchema = z.object({
+  _id: z.string(),
+  name: z.string(),
+  phone_number: z.string().nullable().optional(),
+  blood_type: z.string(),
+  hla_match: z.number(),
+  meld: z.number(),
+  age: z.number(),
+  comorbidities: z.number(),
+  bilirubin: z.number(),
+  inr: z.number(),
+  creatinine: z.number(),
+  ascites_grade: z.number(),
+  encephalopathy_grade: z.number(),
+  hospitalized_last_7d: z.number(),
+  waitlist_days: z.number(),
+  eta_min: z.number(),
+  or_available: z.boolean(),
+  survival_6hr_prob: z.number(),
+  profile_verified: z.boolean().default(false),
+});
+
+export type PatientProfile = z.infer<typeof PatientSchema>;
+
+export async function fetchMyPatientProfile() {
+  const response = await apiClient.get("/patients/me/profile");
+  return PatientSchema.parse(response.data);
+}
+
+export async function updatePatientProfile(patientId: string, payload: Omit<PatientProfile, "_id">) {
+  const response = await apiClient.put(`/patients/${patientId}`, payload);
+  return PatientSchema.parse(response.data);
 }
 
 const DonorSchema = z.object({

@@ -69,7 +69,7 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="flex w-full flex-wrap items-center justify-center gap-3 text-[11px] font-semibold uppercase tracking-[0.4em] text-slate-200 md:w-auto md:flex-nowrap">
+        <div className="flex w-full flex-wrap items-center justify-center gap-3 text-sm font-semibold text-slate-200 md:w-auto md:flex-nowrap">
           <button className="rounded-full border border-slate-800/80 bg-slate-900/80 px-4 py-2 shadow-inner shadow-black/40 transition hover:border-slate-600 hover:text-white" onClick={() => scrollToSection("features")}>
             Features
           </button>
@@ -113,7 +113,7 @@ export default function Home() {
               </div>
             </>
           )}
-          {user?.role === "coordinator" && (
+          {user && (
             <div className="relative">
               <button
                 onClick={() => setShowDashActions((prev) => !prev)}
@@ -125,7 +125,11 @@ export default function Home() {
                 <div className="absolute right-0 z-10 mt-3 w-44 rounded-2xl border border-slate-800 bg-slate-950/90 p-2 shadow-2xl shadow-black/40">
                   <button
                     onClick={() => {
-                      navigate("/dashboard");
+                      if (user.role === "patient") {
+                        navigate("/patient-dashboard");
+                      } else {
+                        navigate("/dashboard");
+                      }
                       setShowDashActions(false);
                     }}
                     className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.3em] text-white transition hover:bg-slate-900"

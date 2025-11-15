@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Brain, ActivitySquare, QrCode, History, Menu, X } from "lucide-react";
+import { Brain, ActivitySquare, QrCode, History, Menu, X, LayoutDashboard } from "lucide-react";
 import { useEffect, useState } from "react";
 import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { AdminLoginModal } from "./components/AdminLoginModal";
@@ -8,6 +8,7 @@ import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import AgentLog from "./pages/AgentLog";
 import DonorScan from "./pages/DonorScan";
 import Home from "./pages/Home";
+import PatientDashboard from "./pages/PatientDashboard";
 import SurgeonDashboard from "./pages/SurgeonDashboard";
 
 function AppShell() {
@@ -20,10 +21,13 @@ function AppShell() {
 
   const closeMenu = () => setMobileNavOpen(false);
   const isCoordinator = Boolean(user && user.role === "coordinator");
+  const isPatient = Boolean(user && user.role === "patient");
 
   useEffect(() => {
     if (user?.role === "coordinator" && location.pathname === "/" && !allowHome) {
       navigate("/dashboard", { replace: true });
+    } else if (user?.role === "patient" && location.pathname === "/" && !allowHome) {
+      navigate("/patient-dashboard", { replace: true });
     } else if (!user && location.pathname !== "/") {
       navigate("/", { replace: true });
     }
@@ -32,7 +36,7 @@ function AppShell() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-inter">
       {!isHomeRoute && (
-        <header className="sticky top-0 z-20 backdrop-blur shadow-md border-b border-slate-800 bg-slate-950/80">
+      <header className="sticky top-0 z-20 backdrop-blur shadow-md border-b border-slate-800 bg-slate-950/80">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
           <motion.div
             className="flex items-center gap-3"
@@ -56,16 +60,21 @@ function AppShell() {
             </Link>
             {isCoordinator && (
               <>
-                <Link className="rounded-full px-4 py-2 font-medium transition hover:bg-slate-800" to="/scan">
-                  <span className="inline-flex items-center gap-2"><QrCode className="h-4 w-4" /> Donor Scan</span>
-                </Link>
-                <Link className="rounded-full px-4 py-2 font-medium transition hover:bg-slate-800" to="/dashboard">
-                  <span className="inline-flex items-center gap-2"><ActivitySquare className="h-4 w-4" /> OR Dashboard</span>
-                </Link>
-                <Link className="rounded-full px-4 py-2 font-medium transition hover:bg-slate-800" to="/agent-log">
-                  <span className="inline-flex items-center gap-2"><History className="h-4 w-4" /> Agent Log</span>
-                </Link>
+            <Link className="rounded-full px-4 py-2 font-medium transition hover:bg-slate-800" to="/scan">
+              <span className="inline-flex items-center gap-2"><QrCode className="h-4 w-4" /> Donor Scan</span>
+            </Link>
+            <Link className="rounded-full px-4 py-2 font-medium transition hover:bg-slate-800" to="/dashboard">
+              <span className="inline-flex items-center gap-2"><ActivitySquare className="h-4 w-4" /> OR Dashboard</span>
+            </Link>
+            <Link className="rounded-full px-4 py-2 font-medium transition hover:bg-slate-800" to="/agent-log">
+              <span className="inline-flex items-center gap-2"><History className="h-4 w-4" /> Agent Log</span>
+            </Link>
               </>
+            )}
+            {isPatient && (
+              <Link className="rounded-full px-4 py-2 font-medium transition hover:bg-slate-800" to="/patient-dashboard">
+                <span className="inline-flex items-center gap-2"><LayoutDashboard className="h-4 w-4" /> Patient Dashboard</span>
+              </Link>
             )}
             {token ? (
               <button
@@ -114,6 +123,11 @@ function AppShell() {
                   </Link>
                 </>
               )}
+              {isPatient && (
+                <Link onClick={closeMenu} className="rounded-2xl border border-slate-800 px-4 py-3" to="/patient-dashboard">
+                  <span className="inline-flex items-center gap-2"><LayoutDashboard className="h-4 w-4" /> Patient Dashboard</span>
+                </Link>
+              )}
               {token ? (
                 <button
                   onClick={() => {
@@ -138,7 +152,7 @@ function AppShell() {
             </div>
           </motion.nav>
         )}
-        </header>
+      </header>
       )}
       {bannerMessage && (
         <div className="mx-auto mt-4 max-w-4xl rounded-2xl border border-medical-green/40 bg-medical-green/10 px-4 py-3 text-sm text-medical-green">
@@ -174,6 +188,14 @@ function AppShell() {
             element={
               <RouteGuard allowedRoles={["coordinator"]} reason="Coordinator access required for agent history.">
                 <AgentLog />
+              </RouteGuard>
+            }
+          />
+          <Route
+            path="/patient-dashboard"
+            element={
+              <RouteGuard allowedRoles={["patient"]} reason="Patient access required.">
+                <PatientDashboard />
               </RouteGuard>
             }
           />

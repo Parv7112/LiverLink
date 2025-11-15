@@ -7,6 +7,7 @@ def patient_document(patient: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "_id": str(patient.get("_id")),
         "name": patient.get("name"),
+        "phone_number": patient.get("phone_number"),
         "blood_type": patient.get("blood_type"),
         "hla_match": patient.get("hla_match"),
         "meld": patient.get("meld"),
