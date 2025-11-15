@@ -19,7 +19,6 @@ dist/
 .DS_Store
 
 # Model artifacts
-backend/app/ai/survival_6hr_model.pkl
 backend/app/ai/*.joblib
 
 # Logs
