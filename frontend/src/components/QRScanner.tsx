@@ -16,6 +16,7 @@ type Props = {
 
 export function QRScanner({ onScan, active = true }: Props) {
   const containerId = useRef(`${DEFAULT_QR}-${Math.random().toString(36).slice(2)}`);
+  const hostRef = useRef<HTMLDivElement | null>(null);
   const scanner = useRef<Html5Qrcode | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [manualDecodeError, setManualDecodeError] = useState<string | null>(null);
@@ -26,7 +27,8 @@ export function QRScanner({ onScan, active = true }: Props) {
   const safeStop = async (engine: Html5Qrcode | null) => {
     if (!engine) return;
     try {
-      if (typeof engine.isScanning === "function" && !engine.isScanning()) {
+      const instance: any = engine;
+      if (typeof instance.isScanning === "function" && !instance.isScanning()) {
         return;
       }
       await engine.stop();
@@ -46,6 +48,41 @@ export function QRScanner({ onScan, active = true }: Props) {
       // ignore
     }
   };
+
+  const applyVideoStyles = () => {
+    const host = hostRef.current;
+    if (!host) return;
+    const video = host.querySelector("video") as HTMLVideoElement | null;
+    const canvas = host.querySelector("canvas") as HTMLCanvasElement | null;
+    if (video) {
+      video.style.position = "absolute";
+      video.style.top = "0";
+      video.style.left = "0";
+      video.style.width = "100%";
+      video.style.height = "100%";
+      video.style.objectFit = "cover";
+      video.style.borderRadius = "1.25rem";
+    }
+    if (canvas) {
+      canvas.style.position = "absolute";
+      canvas.style.top = "0";
+      canvas.style.left = "0";
+      canvas.style.width = "100%";
+      canvas.style.height = "100%";
+      canvas.style.borderRadius = "1.25rem";
+      canvas.style.opacity = "0";
+      canvas.style.pointerEvents = "none";
+    }
+  };
+
+  useEffect(() => {
+    applyVideoStyles();
+    const host = hostRef.current;
+    if (!host) return;
+    const observer = new MutationObserver(() => applyVideoStyles());
+    observer.observe(host, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -69,6 +106,7 @@ export function QRScanner({ onScan, active = true }: Props) {
 
         const instance = new Html5Qrcode(containerId.current, {
           formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+          verbose: false,
         });
         scanner.current = instance;
 
@@ -185,7 +223,11 @@ export function QRScanner({ onScan, active = true }: Props) {
       </div>
       <p className="text-lg font-semibold text-slate-100">Scan donor QR</p>
       <p className="text-xs text-slate-500">{cameraStatus}</p>
-      <div id={containerId.current} className="mt-4 h-[280px] w-full rounded-2xl bg-black/40" />
+      <div className="relative mt-4 w-full overflow-hidden rounded-2xl bg-black/40" style={{ minHeight: 320 }}>
+        <div ref={hostRef} className="relative h-full w-full">
+          <div id={containerId.current} className="absolute inset-0" />
+        </div>
+      </div>
       {error && <p className="mt-2 text-xs text-medical-red">{error}</p>}
       <div className="mt-4 space-y-1">
         <button

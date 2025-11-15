@@ -66,21 +66,30 @@ export function AIAgentStatus({ status, progress }: Props) {
         <div className="space-y-3">
           <p className="text-sm font-semibold text-slate-400">Live Reasoning</p>
           <div className="h-40 overflow-y-auto rounded-2xl border border-slate-800 bg-slate-950/60 p-4 text-sm text-slate-300">
-            {status.reasoning.slice().reverse().map((line, index) => (
-              <motion.p
-                key={`${line}-${index}`}
-                className="mb-2 rounded-xl bg-slate-900/60 p-3"
-                initial={{ opacity: 0, x: 24 }}
-                animate={{ opacity: 1, x: 0 }}
-              >
-                {line}
-              </motion.p>
-            ))}
+            {status.reasoning.length === 0 && <p className="text-xs text-slate-500">Awaiting agent activity.</p>}
+            {status.reasoning
+              .slice()
+              .reverse()
+              .map((line, index) => (
+                <motion.p
+                  key={`${line}-${index}`}
+                  className="mb-2 rounded-xl bg-slate-900/60 p-3"
+                  initial={{ opacity: 0, x: 24 }}
+                  animate={{ opacity: 1, x: 0 }}
+                >
+                  {line}
+                </motion.p>
+              ))}
           </div>
         </div>
         <div className="space-y-3">
           <p className="text-sm font-semibold text-slate-400">Top Candidates</p>
           <div className="space-y-3">
+            {status.topCandidates.length === 0 && (
+              <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/60 p-4 text-sm text-slate-400">
+                No candidates ranked yet. Scan a donor wristband to start allocation.
+              </div>
+            )}
             {status.topCandidates.map((candidate, idx) => (
               <motion.div
                 key={candidate.id ?? idx}

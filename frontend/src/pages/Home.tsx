@@ -41,7 +41,7 @@ const timeline = [
 ];
 
 export default function Home() {
-  const { openLogin, user, logout } = useAuth();
+  const { openLogin, user, logout, token } = useAuth();
   const navigate = useNavigate();
   const [showDashActions, setShowDashActions] = useState(false);
   const [showAuthActions, setShowAuthActions] = useState(false);
@@ -171,7 +171,17 @@ export default function Home() {
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               className="rounded-full bg-medical-blue px-8 py-3 text-sm font-semibold uppercase tracking-widest text-white shadow-lg shadow-medical-blue/40"
-              onClick={() => openLogin("Log in to continue", "login")}
+              onClick={() => {
+                if (token) {
+                  if (user?.role === "patient") {
+                    navigate("/patient-dashboard");
+                  } else {
+                    navigate("/dashboard");
+                  }
+                } else {
+                  openLogin("Log in to continue", "login");
+                }
+              }}
             >
               Launch Dashboard
             </motion.button>
