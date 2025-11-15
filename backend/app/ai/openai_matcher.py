@@ -128,7 +128,7 @@ Respond with ONLY valid JSON array (no markdown, no extra text):
 Be realistic and evidence-based. Survival probabilities: 0.3-0.95. Consider both urgency and outcomes."""
 
             response = await self.client.chat.completions.create(
-                model="google/gemini-flash-1.5",  # Reliable and very cheap (~$0.075/1M tokens) via OpenRouter
+                model="openai/gpt-4o-mini",  # Very reliable and cheap ($0.15/1M tokens) via OpenRouter
                 messages=[
                     {
                         "role": "system",
