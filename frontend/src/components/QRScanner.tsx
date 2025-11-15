@@ -110,9 +110,14 @@ export function QRScanner({ onScan, active = true }: Props) {
         });
         scanner.current = instance;
 
+        console.log("[QRScanner] Requesting camera access...");
         const cameras = await Html5Qrcode.getCameras();
+        console.log(`[QRScanner] Found ${cameras.length} cameras:`, cameras);
+        
         if (!cameras.length) {
+          console.warn("[QRScanner] No cameras detected");
           setCameraStatus("No camera detected. Upload a QR image instead.");
+          setError("No camera found. Please use the upload option or check camera permissions.");
           return;
         }
 
@@ -122,11 +127,13 @@ export function QRScanner({ onScan, active = true }: Props) {
           aspectRatio: 1,
         };
 
+        console.log(`[QRScanner] Starting camera with ID: ${cameras[0].id}`);
         await instance.start(
           { deviceId: { exact: cameras[0].id } },
           config,
           (decoded) => {
             if (cancelled) return;
+            console.log("[QRScanner] QR decoded:", decoded);
             onScan(decoded);
             setError(null);
             setManualDecodeError(null);
@@ -145,11 +152,27 @@ export function QRScanner({ onScan, active = true }: Props) {
             }
           }
         );
+        console.log("[QRScanner] Camera started successfully");
         setCameraStatus("Camera active. Hold the QR steady.");
       } catch (cameraError: any) {
         if (!cancelled) {
+          console.error("[QRScanner] Camera error:", cameraError);
+          const errorMsg = cameraError?.message ?? "Unable to initialize camera.";
+          
+          // Provide specific error messages for common issues
+          let userMessage = errorMsg;
+          if (errorMsg.includes("Permission denied") || errorMsg.includes("NotAllowedError")) {
+            userMessage = "Camera permission denied. Please allow camera access in your browser settings.";
+          } else if (errorMsg.includes("NotFoundError") || errorMsg.includes("not found")) {
+            userMessage = "No camera found on this device. Please use the upload option.";
+          } else if (errorMsg.includes("NotReadableError")) {
+            userMessage = "Camera is in use by another application. Please close other apps and refresh.";
+          } else if (errorMsg.includes("NotSupportedError") || errorMsg.includes("HTTPS")) {
+            userMessage = "Camera requires HTTPS connection. Please ensure you're using a secure connection.";
+          }
+          
           setCameraStatus("Camera unavailable. Use the upload option below.");
-          setError(cameraError?.message ?? "Unable to initialize camera.");
+          setError(userMessage);
         }
       }
     };

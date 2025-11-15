@@ -145,6 +145,7 @@ def _normalize_patient(raw: Dict[str, Any]) -> Dict[str, Any]:
         "ventilator_dependent": bool(features["ventilator_dependent"]),
         "distance_to_donor_km": features["distance_to_donor_km"],
         # Contact info
+        "phone_number": patient.get("phone_number"),
         "surgeon_phone": patient.get("surgeon_phone"),
         "hospital": patient.get("hospital"),
     }

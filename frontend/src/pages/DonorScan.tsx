@@ -186,17 +186,25 @@ function DonorScan() {
   }, [token]);
 
   const onScan = useCallback((value: string) => {
+    console.log("[DonorScan] QR scanned, raw value:", value);
+    alert(`QR Detected: ${value.substring(0, 50)}...`); // Visual feedback
+    
     const parsed = parseDonorPayload(value);
+    console.log("[DonorScan] Parsed result:", parsed);
+    
     if (parsed.donor) {
+        console.log("[DonorScan] Setting donor data:", parsed.donor);
         setDonorData((prev) => ({
           ...prev,
           ...parsed.donor,
         }));
     }
     if (parsed.qrCodeId) {
+      console.log("[DonorScan] Setting QR code:", parsed.qrCodeId);
       setQrCode(parsed.qrCodeId);
       setStatus("QR detected and donor profile pre-filled.");
     } else {
+      console.warn("[DonorScan] No QR code ID found, using raw value");
       setQrCode(value);
       setStatus("QR captured but we could not read metadata. Please verify fields manually.");
     }
@@ -217,7 +225,23 @@ function DonorScan() {
       }
       setLoading(true);
       try {
-        await registerDonor({ qr_code_id: qrCode, ...donorData });
+        // Ensure required fields have values (use defaults if undefined)
+        const payload = {
+          qr_code_id: qrCode,
+          organ: donorData.organ || "liver",
+          blood_type: donorData.blood_type || "O+",
+          age: donorData.age ?? 0,
+          cause_of_death: donorData.cause_of_death || "Unknown",
+          crossmatch_score: donorData.crossmatch_score ?? 0,
+          procurement_hospital: donorData.procurement_hospital || "Unknown",
+          arrival_eta_min: donorData.arrival_eta_min ?? 0,
+          hla_a: donorData.hla_a,
+          hla_b: donorData.hla_b,
+          hla_drb1: donorData.hla_drb1,
+          donor_meld_context: donorData.donor_meld_context,
+        };
+        
+        await registerDonor(payload);
         setStatus("Donor registered. Triggering AI allocation...");
         await triggerAllocation(qrCode, donorData.organ);
         setStatus("Allocation initiated. Redirecting to Agent Log...");

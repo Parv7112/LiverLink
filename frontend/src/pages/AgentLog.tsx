@@ -40,6 +40,8 @@ type Patient = {
   ventilator_dependent?: boolean;
   hla_antibody_level?: number;
   hospital?: string;
+  surgeon_phone?: string;
+  phone_number?: string;
 };
 
 type AllocationEntry = {
@@ -92,11 +94,11 @@ function AgentLog() {
   };
 
   const handleContactPatient = useCallback(
-    async (patientId: string, donorQrCode: string, patientName: string) => {
+    async (patientId: string, donorQrCode: string, patientName: string, phoneNumber?: string) => {
       setContactingPatient(patientId);
       try {
         const message = `URGENT: Liver available for ${patientName}. Please respond ASAP to confirm acceptance.`;
-        await contactPatient(donorQrCode, patientId, message);
+        await contactPatient(donorQrCode, patientId, message, phoneNumber);
         alert(`SMS sent to surgeon for ${patientName}`);
       } catch (error: any) {
         console.error("Failed to contact patient:", error);
@@ -556,7 +558,7 @@ function PatientCard({
   allocationId?: string;
   donorQrCode?: string;
   isAllocated?: boolean;
-  onContact?: (patientId: string, donorQrCode: string, patientName: string) => void;
+  onContact?: (patientId: string, donorQrCode: string, patientName: string, phoneNumber?: string) => void;
   onAccept?: (patientId: string, donorQrCode: string, allocationId: string, patientName: string) => void;
   onViewDetails?: () => void;
   isContacting?: boolean;
@@ -690,12 +692,12 @@ function PatientCard({
       {!isAccepted && !isAllocated && onContact && onAccept && allocationId && donorQrCode && (
         <div className="mt-4 flex gap-2 border-t border-slate-700 pt-3">
           <button
-            onClick={() => onContact(patientId, donorQrCode, patientName)}
+            onClick={() => onContact(patientId, donorQrCode, patientName, patient.surgeon_phone || patient.phone_number)}
             disabled={isContacting || isAccepting}
             className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-medical-blue px-3 py-2 text-xs font-semibold text-white transition hover:bg-medical-blue/80 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Phone className="h-3.5 w-3.5" />
-            {isContacting ? "Sending..." : "Contact Surgeon"}
+            {isContacting ? "Sending..." : "Contact Patient"}
           </button>
           <button
             onClick={() => onAccept(patientId, donorQrCode, allocationId, patientName)}

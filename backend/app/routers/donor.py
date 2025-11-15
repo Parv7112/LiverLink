@@ -6,6 +6,7 @@ from typing import Annotated
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status
+from loguru import logger
 from motor.motor_asyncio import AsyncIOMotorCollection
 from pydantic import BaseModel
 
@@ -84,6 +85,7 @@ class ContactPatientRequest(BaseModel):
     patient_id: str
     donor_qr_code_id: str
     message: str
+    phone_number: str | None = None  # Optional: override patient's surgeon_phone
 
 
 class AcceptAllocationRequest(BaseModel):
@@ -122,29 +124,66 @@ async def contact_patient(
     if not patient_data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found in allocation")
     
-    # Get surgeon phone
-    surgeon_phone = patient_data.get("surgeon_phone", "+15551234567")
+    # Get phone number: use provided phone_number, fallback to surgeon_phone from patient data, or default
+    phone_number = payload.phone_number or patient_data.get("surgeon_phone") or patient_data.get("phone_number") or "+15551234567"
     
     # Send SMS
     sms = SmsNotification(
-        to=surgeon_phone,
+        to=phone_number,
         body=payload.message or f"Organ available for {patient_data.get('name')}. Reply ACCEPT to proceed."
     )
     
     try:
         await notification_service.send_sms(sms)
+        
+        # Check if SMS was actually sent or mocked
+        if notification_service.client:
+            status_msg = "SMS sent successfully via Twilio"
+        else:
+            status_msg = "SMS mocked (no Twilio configured)"
+        
         return {
             "status": "sent",
             "patient_id": payload.patient_id,
-            "surgeon_phone": surgeon_phone,
+            "phone_number": phone_number,
             "allocation_id": allocation_id,
-            "message": "SMS sent successfully" if notification_service.client else "SMS mocked (no Twilio configured)"
+            "message": status_msg,
+            "twilio_configured": notification_service.client is not None
         }
     except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to send SMS: {str(exc)}"
-        )
+        # SMS failed but we don't want to block the allocation
+        logger.error(f"SMS send failed for {phone_number}: {exc}")
+        return {
+            "status": "failed",
+            "patient_id": payload.patient_id,
+            "phone_number": phone_number,
+            "allocation_id": allocation_id,
+            "message": f"SMS delivery failed: {str(exc)}",
+            "twilio_configured": notification_service.client is not None,
+            "error": str(exc)
+        }
+
+
+@router.get("/{qr_code_id}/debug-allocation")
+async def debug_allocation(
+    _: CoordinatorUser,
+    qr_code_id: str,
+) -> dict:
+    """Debug endpoint to check what patient data is stored in allocation memory."""
+    entries = await allocation_memory.history(limit=10)
+    
+    for entry in entries:
+        if entry.get("donor", {}).get("qr_code_id") == qr_code_id:
+            ranked_patients = entry.get("ranked_patients", [])
+            return {
+                "found": True,
+                "donor_qr": qr_code_id,
+                "ranked_patients_count": len(ranked_patients),
+                "sample_patient": ranked_patients[0] if ranked_patients else None,
+                "patient_fields": list(ranked_patients[0].keys()) if ranked_patients else []
+            }
+    
+    return {"found": False, "donor_qr": qr_code_id}
 
 
 @router.post("/{qr_code_id}/accept-allocation")

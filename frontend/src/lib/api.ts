@@ -135,11 +135,12 @@ export async function fetchAgentHistory() {
   return AgentHistorySchema.parse(response.data);
 }
 
-export async function contactPatient(qrCodeId: string, patientId: string, message: string) {
+export async function contactPatient(qrCodeId: string, patientId: string, message: string, phoneNumber?: string) {
   const response = await apiClient.post(`/donors/${qrCodeId}/contact-patient`, {
     patient_id: patientId,
     donor_qr_code_id: qrCodeId,
     message,
+    phone_number: phoneNumber,
   });
   return response.data;
 }
